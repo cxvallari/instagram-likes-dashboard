@@ -1,0 +1,12 @@
+session.json
+action_session.json
+config.json
+__pycache__/
+*.pyc
+*.pyw
+*.bat
+=0.19
+=10.0
+.env
+venv/
+.venv/
