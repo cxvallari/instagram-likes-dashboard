@@ -122,11 +122,14 @@ def _ig_cookies(sessionid: str, csrftoken: str = "", mid: str = "") -> dict:
 
 def _ig_hdrs(csrftoken: str = "") -> dict:
     h = {
+        "User-Agent":      "Instagram 278.0.0.19.115 Android (26/8.0.0; 480dpi; 1080x1920; OnePlus; ONEPLUS A3010; OnePlus3T; qcom; en_US; 314665256)",
         "X-IG-App-ID":     "936619743392459",
         "Accept":          "*/*",
         "Accept-Language": "it-IT,it;q=0.9",
         "Origin":          "https://www.instagram.com",
         "Referer":         "https://www.instagram.com/",
+        "X-IG-Capabilities": "3brTvwE=",
+        "X-IG-Connection-Type": "WIFI",
     }
     if csrftoken:
         h["X-CSRFToken"] = csrftoken
@@ -156,7 +159,11 @@ def _ig_profile_info(username: str, sessionid: str, csrftoken: str, mid: str) ->
     )
     if not resp.ok:
         raise Exception(f"Profilo non trovato (HTTP {resp.status_code})")
-    return resp.json()
+    data = resp.json()
+    # Normalise: some endpoints return {"user": {...}} instead of {"data": {"user": {...}}}
+    if "user" in data and "data" not in data:
+        data = {"data": {"user": data["user"]}}
+    return data
 
 def _sse_headers():
     return {"Cache-Control": "no-cache,no-transform",
@@ -219,11 +226,16 @@ def get_bio(username: str):
         user = (data.get("data") or {}).get("user")
         if not user:
             return jsonify({"success": False, "error": "Profilo non trovato o privato"})
+        follower_count = (
+            (user.get("edge_followed_by") or {}).get("count")
+            or user.get("follower_count")
+            or 0
+        )
         return jsonify({
             "success":         True,
-            "pk":              str(user.get("id") or ""),
+            "pk":              str(user.get("id") or user.get("pk") or ""),
             "biography":       user.get("biography") or "",
-            "follower_count":  (user.get("edge_followed_by") or {}).get("count", 0),
+            "follower_count":  follower_count,
             "profile_pic_url": user.get("profile_pic_url_hd") or user.get("profile_pic_url") or "",
             "is_private":      user.get("is_private", False),
             "is_verified":     user.get("is_verified", False),
@@ -254,7 +266,9 @@ def stream_likers():
             total_sent  = 0
             seen_pks    = set()
             while True:
-                params = {"min_id": next_min_id} if next_min_id else {}
+                params = {"count": 100}
+                if next_min_id:
+                    params["min_id"] = next_min_id
                 result = _ig_get(f"media/{media_pk}/likers/", sessionid, csrftoken, mid, params)
                 if user_count is None:
                     user_count = result.get("user_count", 0)
@@ -610,8 +624,8 @@ def stream_detect_genders(token: str):
                     api_error = "Nessuna URL immagine profilo"
 
                 if api_error:
-                    yield f"data: {json.dumps({'type':'error','message':api_error})}\n\n"
-                    return
+                    yield f"data: {json.dumps({'type':'gender_error','username':username,'message':api_error,'done':i+1,'total':len(profiles)})}\n\n"
+                    continue
                 yield f"data: {json.dumps({'type':'gender','username':username,'gender':gender,'done':i+1,'total':len(profiles)})}\n\n"
                 time.sleep(0.1)
             yield f"data: {json.dumps({'type':'done','total':len(profiles)})}\n\n"

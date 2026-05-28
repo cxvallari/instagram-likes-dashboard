@@ -2318,6 +2318,9 @@ async function runGenderDetection() {
       if (msg.gender === 'male'   && mCatId) { CatManager.assign(msg.username, mCatId); updateCardCatBadges(msg.username); }
       doneCount++;
       btn.textContent = `🤖 ${msg.done}/${msg.total}`;
+    } else if (msg.type === 'gender_error') {
+      // Single profile failed — skip it and keep going
+      btn.textContent = `🤖 ${msg.done}/${msg.total}`;
     } else if (msg.type === 'done') {
       es.close(); genderDetectES = null;
       btn.disabled = false; btn.classList.remove('active'); btn.textContent = '🤖 AI Genere';
