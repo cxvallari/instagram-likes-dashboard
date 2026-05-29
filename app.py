@@ -156,54 +156,79 @@ def _ig_get(path: str, sessionid: str, csrftoken: str = "", mid: str = "",
         raise Exception(data.get("message") or "API Instagram: status fail")
     return data
 
+def _normalise_profile_data(raw: dict) -> dict:
+    """Wrap {user:{...}} into {data:{user:{...}}} if needed."""
+    if "user" in raw and "data" not in raw:
+        return {"data": {"user": raw["user"]}}
+    return raw
+
 def _ig_profile_info(username: str, sessionid: str, csrftoken: str, mid: str) -> dict:
     profile_referer = f"https://www.instagram.com/{username}/"
-    mobile_hdrs = {**_ig_hdrs(csrftoken), "Referer": profile_referer}
 
-    # Try mobile API first (i.instagram.com)
+    # ── Tier 1: mobile API (i.instagram.com) ────────────────────────────
     try:
         resp = requests.get(
             f"https://i.instagram.com/api/v1/users/web_profile_info/?username={username}",
-            headers=mobile_hdrs,
+            headers={**_ig_hdrs(csrftoken), "Referer": profile_referer},
             cookies=_ig_cookies(sessionid, csrftoken, mid),
             timeout=10,
         )
         if resp.ok and resp.text.strip():
-            data = resp.json()
-            if "user" in data and "data" not in data:
-                data = {"data": {"user": data["user"]}}
+            data = _normalise_profile_data(resp.json())
             if (data.get("data") or {}).get("user"):
                 return data
     except Exception:
         pass
 
-    # Fallback: web API (www.instagram.com) — works even when mobile API returns 400
-    web_hdrs = {
-        "User-Agent":      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "X-IG-App-ID":     "936619743392459",
-        "Accept":          "*/*",
-        "Accept-Language": "it-IT,it;q=0.9",
-        "Referer":         profile_referer,
-        "Origin":          "https://www.instagram.com",
-    }
-    if csrftoken:
-        web_hdrs["X-CSRFToken"] = csrftoken
-    resp2 = requests.get(
-        f"https://www.instagram.com/api/v1/users/web_profile_info/?username={username}",
-        headers=web_hdrs,
-        cookies=_ig_cookies(sessionid, csrftoken, mid),
-        timeout=10,
-    )
-    if not resp2.ok:
-        raise Exception(f"Profilo non trovato (HTTP {resp2.status_code})")
-    if not resp2.text.strip():
-        raise Exception("Risposta vuota dalla ricerca profilo — riprova il login")
-    data2 = resp2.json()
-    if data2.get("status") == "fail":
-        raise Exception(data2.get("message") or "Profilo non trovato")
-    if "user" in data2 and "data" not in data2:
-        data2 = {"data": {"user": data2["user"]}}
-    return data2
+    # ── Tier 2: web API (www.instagram.com, Chrome UA) ──────────────────
+    try:
+        web_hdrs = {
+            "User-Agent":      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "X-IG-App-ID":     "936619743392459",
+            "Accept":          "*/*",
+            "Accept-Language": "it-IT,it;q=0.9",
+            "Referer":         profile_referer,
+            "Origin":          "https://www.instagram.com",
+        }
+        resp2 = requests.get(
+            f"https://www.instagram.com/api/v1/users/web_profile_info/?username={username}",
+            headers=web_hdrs,
+            cookies=_ig_cookies(sessionid, csrftoken, mid),
+            timeout=10,
+        )
+        if resp2.ok and resp2.text.strip():
+            data2 = resp2.json()
+            if data2.get("status") != "fail":
+                data2 = _normalise_profile_data(data2)
+                if (data2.get("data") or {}).get("user"):
+                    return data2
+    except Exception:
+        pass
+
+    # ── Tier 3: user search (works for private & edge-case accounts) ─────
+    try:
+        sr = _ig_get(
+            f"users/search/?q={username}&count=10&search_surface=user_search_page",
+            sessionid, csrftoken, mid,
+        )
+        for u in (sr.get("users") or []):
+            if u.get("username", "").lower() == username.lower():
+                return {"data": {"user": {
+                    "id":               str(u.get("pk") or u.get("pk_id") or ""),
+                    "pk":               str(u.get("pk") or ""),
+                    "username":         u.get("username", ""),
+                    "full_name":        u.get("full_name") or "",
+                    "biography":        u.get("biography") or "",
+                    "is_private":       u.get("is_private", False),
+                    "is_verified":      u.get("is_verified", False),
+                    "profile_pic_url":  u.get("profile_pic_url") or "",
+                    "edge_followed_by": {"count": u.get("follower_count") or 0},
+                    "edge_follow":      {"count": u.get("following_count") or 0},
+                }}}
+    except Exception:
+        pass
+
+    raise Exception(f"Profilo @{username} non trovato su Instagram")
 
 def _sse_headers():
     return {"Cache-Control": "no-cache,no-transform",
