@@ -148,22 +148,62 @@ def _ig_get(path: str, sessionid: str, csrftoken: str = "", mid: str = "",
         raise Exception(f"{resp.status_code} — {resp.text[:200]}")
     if not resp.text.strip():
         raise Exception(f"Risposta vuota (status {resp.status_code}) — riprova il login")
-    return resp.json()
+    try:
+        data = resp.json()
+    except Exception:
+        raise Exception(f"Risposta non JSON (HTTP {resp.status_code}) — riprova")
+    if data.get("status") == "fail":
+        raise Exception(data.get("message") or "API Instagram: status fail")
+    return data
 
 def _ig_profile_info(username: str, sessionid: str, csrftoken: str, mid: str) -> dict:
-    resp = requests.get(
-        f"https://i.instagram.com/api/v1/users/web_profile_info/?username={username}",
-        headers=_ig_hdrs(csrftoken),
+    profile_referer = f"https://www.instagram.com/{username}/"
+    mobile_hdrs = {**_ig_hdrs(csrftoken), "Referer": profile_referer}
+
+    # Try mobile API first (i.instagram.com)
+    try:
+        resp = requests.get(
+            f"https://i.instagram.com/api/v1/users/web_profile_info/?username={username}",
+            headers=mobile_hdrs,
+            cookies=_ig_cookies(sessionid, csrftoken, mid),
+            timeout=10,
+        )
+        if resp.ok and resp.text.strip():
+            data = resp.json()
+            if "user" in data and "data" not in data:
+                data = {"data": {"user": data["user"]}}
+            if (data.get("data") or {}).get("user"):
+                return data
+    except Exception:
+        pass
+
+    # Fallback: web API (www.instagram.com) — works even when mobile API returns 400
+    web_hdrs = {
+        "User-Agent":      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "X-IG-App-ID":     "936619743392459",
+        "Accept":          "*/*",
+        "Accept-Language": "it-IT,it;q=0.9",
+        "Referer":         profile_referer,
+        "Origin":          "https://www.instagram.com",
+    }
+    if csrftoken:
+        web_hdrs["X-CSRFToken"] = csrftoken
+    resp2 = requests.get(
+        f"https://www.instagram.com/api/v1/users/web_profile_info/?username={username}",
+        headers=web_hdrs,
         cookies=_ig_cookies(sessionid, csrftoken, mid),
         timeout=10,
     )
-    if not resp.ok:
-        raise Exception(f"Profilo non trovato (HTTP {resp.status_code})")
-    data = resp.json()
-    # Normalise: some endpoints return {"user": {...}} instead of {"data": {"user": {...}}}
-    if "user" in data and "data" not in data:
-        data = {"data": {"user": data["user"]}}
-    return data
+    if not resp2.ok:
+        raise Exception(f"Profilo non trovato (HTTP {resp2.status_code})")
+    if not resp2.text.strip():
+        raise Exception("Risposta vuota dalla ricerca profilo — riprova il login")
+    data2 = resp2.json()
+    if data2.get("status") == "fail":
+        raise Exception(data2.get("message") or "Profilo non trovato")
+    if "user" in data2 and "data" not in data2:
+        data2 = {"data": {"user": data2["user"]}}
+    return data2
 
 def _sse_headers():
     return {"Cache-Control": "no-cache,no-transform",
@@ -226,16 +266,15 @@ def get_bio(username: str):
         user = (data.get("data") or {}).get("user")
         if not user:
             return jsonify({"success": False, "error": "Profilo non trovato o privato"})
-        follower_count = (
-            (user.get("edge_followed_by") or {}).get("count")
-            or user.get("follower_count")
-            or 0
-        )
+        follower_count  = (user.get("edge_followed_by") or {}).get("count") or user.get("follower_count") or 0
+        following_count = (user.get("edge_follow") or {}).get("count") or user.get("following_count") or 0
         return jsonify({
             "success":         True,
             "pk":              str(user.get("id") or user.get("pk") or ""),
+            "full_name":       user.get("full_name") or "",
             "biography":       user.get("biography") or "",
             "follower_count":  follower_count,
+            "following_count": following_count,
             "profile_pic_url": user.get("profile_pic_url_hd") or user.get("profile_pic_url") or "",
             "is_private":      user.get("is_private", False),
             "is_verified":     user.get("is_verified", False),
@@ -307,28 +346,42 @@ def _stream_connections_gen(username: str, conn_type: str,
         if not user:
             yield f"data: {json.dumps({'type':'error','message':'Profilo non trovato o privato'})}\n\n"
             return
-        user_id  = user.get("id") or user.get("pk")
+        user_id  = str(user.get("id") or user.get("pk") or "")
+        if not user_id:
+            yield f"data: {json.dumps({'type':'error','message':'ID utente non trovato nel profilo'})}\n\n"
+            return
         endpoint = "followers" if conn_type == "followers" else "following"
+        total_count = (
+            (user.get("edge_followed_by") or {}).get("count") if conn_type == "followers"
+            else (user.get("edge_follow") or {}).get("count")
+        ) or user.get("follower_count" if conn_type == "followers" else "following_count") or 0
+        if total_count:
+            yield f"data: {json.dumps({'type':'total','count':total_count})}\n\n"
         yield f"data: {json.dumps({'type':'status','message':f'Caricamento {endpoint}…'})}\n\n"
         sent = 0
-        seen = set()
+        seen: set = set()
         next_max_id = ""
         while sent < limit:
-            params = {"count": 100}
+            params: dict = {
+                "count": 200,
+                "search_surface": "follow_list_page",
+            }
             if next_max_id:
                 params["max_id"] = next_max_id
             result = _ig_get(f"friendships/{user_id}/{endpoint}/", sessionid, csrftoken, mid, params)
-            for u in result.get("users", []):
-                pk = u.get("pk")
-                if pk in seen:
+            users_batch = result.get("users") or []
+            for u in users_batch:
+                pk = str(u.get("pk") or "")
+                if not pk or pk in seen:
                     continue
                 seen.add(pk)
-                yield f"data: {json.dumps({'type':'user','data':{'pk':str(pk or ''),'username':u.get('username',''),'full_name':u.get('full_name') or '','profile_pic_url':u.get('profile_pic_url') or '','is_private':u.get('is_private',False),'is_verified':u.get('is_verified',False)}})}\n\n"
+                yield f"data: {json.dumps({'type':'user','data':{'pk':pk,'username':u.get('username',''),'full_name':u.get('full_name') or '','profile_pic_url':u.get('profile_pic_url') or '','is_private':u.get('is_private',False),'is_verified':u.get('is_verified',False)}})}\n\n"
                 sent += 1
                 if sent >= limit:
                     break
-            next_max_id = result.get("next_max_id", "")
-            if not next_max_id:
+            raw_next = result.get("next_max_id")
+            next_max_id = str(raw_next) if raw_next else ""
+            if not next_max_id or not users_batch:
                 break
         yield f"data: {json.dumps({'type':'done','count':sent})}\n\n"
     except Exception as exc:
@@ -719,11 +772,15 @@ def proxy_image():
         return Response(status=400)
     try:
         resp = requests.get(url, timeout=8, headers={
-            "User-Agent": "Mozilla/5.0",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             "Referer":    "https://www.instagram.com/",
         })
-        return Response(resp.content,
-                        content_type=resp.headers.get("Content-Type", "image/jpeg"))
+        if not resp.ok:
+            return Response(status=resp.status_code)
+        ct = resp.headers.get("Content-Type", "image/jpeg")
+        if not ct.startswith("image/"):
+            return Response(status=502)
+        return Response(resp.content, content_type=ct)
     except Exception:
         return Response(status=502)
 

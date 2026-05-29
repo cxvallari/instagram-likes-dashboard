@@ -1065,7 +1065,8 @@ async function runBioQ() {
       const r = await fetch(`/api/bio/${encodeURIComponent(username)}`, {headers: authHeaders()});
       const d = await r.json();
       if (d.success) {
-        const patch = { pk: d.pk||'', biography: d.biography||'', follower_count: d.follower_count||0,
+        const patch = { pk: d.pk||'', full_name: d.full_name||'', biography: d.biography||'',
+                        follower_count: d.follower_count||0, following_count: d.following_count||0,
                         profile_pic_url: d.profile_pic_url||'', _bioLoaded: true };
         ProfileCache.set(username, patch);
         applyBioCard(card, patch);
@@ -1354,10 +1355,13 @@ async function fetchModalBio(username) {
     const r = await fetch(`/api/bio/${encodeURIComponent(username)}`, {headers: authHeaders()});
     const d = await r.json();
     if (d.success && modalUser === username) {
-      ProfileCache.set(username, { pk:d.pk||'', biography:d.biography||'', follower_count:d.follower_count||0,
+      ProfileCache.set(username, { pk:d.pk||'', full_name:d.full_name||'', biography:d.biography||'',
+                                   follower_count:d.follower_count||0, following_count:d.following_count||0,
                                    profile_pic_url:d.profile_pic_url||'', _bioLoaded:true });
-      document.getElementById('m-bio').textContent = d.biography || '';
-      document.getElementById('m-flw').textContent = d.follower_count ? fmtNum(d.follower_count) : '—';
+      document.getElementById('m-bio').textContent      = d.biography || '';
+      document.getElementById('m-flw').textContent      = d.follower_count ? fmtNum(d.follower_count) : '—';
+      document.getElementById('m-fol').textContent      = d.following_count ? fmtNum(d.following_count) : '—';
+      document.getElementById('m-fullname').textContent = d.full_name || '';
     }
   } catch(_) {}
 }
@@ -1858,11 +1862,12 @@ async function openProfileByUsername(username) {
       const r = await fetch(`/api/bio/${encodeURIComponent(username)}`, {headers: authHeaders()});
       const d = await r.json();
       if (d.success) {
-        const patch = { pk:d.pk||'', biography:d.biography||'', follower_count:d.follower_count||0,
+        const patch = { pk:d.pk||'', full_name:d.full_name||'', biography:d.biography||'',
+                        follower_count:d.follower_count||0, following_count:d.following_count||0,
                         profile_pic_url:d.profile_pic_url||'', _bioLoaded:true,
                         is_private:d.is_private||false, is_verified:d.is_verified||false };
         ProfileCache.set(username, patch);
-        fillProfileResult(username, { ...patch, username, full_name:'' });
+        fillProfileResult(username, { ...patch, username });
       } else {
         document.getElementById('ps-bio-txt').textContent = '❌ Profilo non trovato o privato.';
       }
@@ -1880,7 +1885,9 @@ function fillProfileResult(username, d) {
   document.getElementById('ps-vbadge').style.display  = d.is_verified ? 'flex' : 'none';
   document.getElementById('ps-fname').textContent  = d.full_name || '';
   document.getElementById('ps-bio-txt').textContent= d.biography || '';
-  document.getElementById('ps-stats').textContent  = d.follower_count ? fmtNum(d.follower_count) + ' follower' : '';
+  const flw = d.follower_count ? fmtNum(d.follower_count) + ' follower' : '';
+  const fol = d.following_count ? fmtNum(d.following_count) + ' following' : '';
+  document.getElementById('ps-stats').textContent  = [flw, fol].filter(Boolean).join(' · ');
   document.getElementById('btn-load-flw').disabled = false;
   document.getElementById('btn-load-fol').disabled = false;
 }
@@ -1908,16 +1915,24 @@ function startConnections(username, type) {
     `/api/stream-connections?username=${encodeURIComponent(username)}&type=${type}${sseAuthSuffix()}`);
   currentConnES = es;
 
+  let connTotal = 0;
   es.onmessage = ev => {
     const msg = JSON.parse(ev.data);
-    if (msg.type==='status') {
+    if (msg.type==='total') {
+      connTotal = msg.count;
+      document.getElementById('count-num').textContent = connTotal;
+      document.getElementById('count-pill').style.display = '';
+    } else if (msg.type==='status') {
       setStatus(`<span class="dot"></span>${msg.message}`);
     } else if (msg.type==='user') {
       addCard(msg.data);
       const n=allProfiles.length;
-      if (n%20===0) setStatus(`<span class="dot"></span>${n} ${label} caricati…`);
+      const tot = connTotal ? ` / ${connTotal}` : '';
+      if (n%20===0) setStatus(`<span class="dot"></span>${n}${tot} ${label} caricati…`);
     } else if (msg.type==='done') {
       es.close(); currentConnES=null;
+      document.getElementById('count-num').textContent = msg.count;
+      document.getElementById('count-pill').style.display = '';
       setStatus(`✅ ${msg.count} ${label} di @${username}`);
     } else if (msg.type==='error') {
       es.close(); currentConnES=null;
