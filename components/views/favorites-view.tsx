@@ -20,7 +20,7 @@ export function FavoritesView() {
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">{favs.length} profili salvati nei preferiti.</p>
-      <PeopleGrid users={users} enableFollowFilter={false} />
+      <PeopleGrid users={users} />
     </div>
   );
 }

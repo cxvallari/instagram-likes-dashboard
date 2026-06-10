@@ -1,9 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
-  Search, Download, CheckSquare, Square, UserMinus, X, Tag,
+  Search, Download, CheckSquare, Square, UserMinus, X, Tag, ImageIcon, Loader2,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -24,18 +24,12 @@ import { ProfileCard, type GridUser } from "@/components/profile-card";
 import { ProfileModal } from "@/components/profile-modal";
 import {
   getFavorites, toggleFavorite, getCategories, getProfileCats, toggleCategory,
-  assignCategory, getCached,
+  assignCategory, getCached, setCached,
 } from "@/lib/store";
-import { followAction } from "@/lib/api";
+import { followAction, getProfile, enrichWithFriendship } from "@/lib/api";
 import type { FollowFilter, PrivacyFilter, SortKey } from "@/lib/types";
 
-export function PeopleGrid({
-  users,
-  enableFollowFilter = true,
-}: {
-  users: GridUser[];
-  enableFollowFilter?: boolean;
-}) {
+export function PeopleGrid({ users }: { users: GridUser[] }) {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortKey>("default");
   const [followFilter, setFollowFilter] = useState<FollowFilter>("all");
@@ -54,13 +48,25 @@ export function PeopleGrid({
   const [progress, setProgress] = useState({ done: 0, ok: 0, err: 0, total: 0 });
   const stop = useState({ v: false })[0];
 
+  // Fresh profile-pic URLs fetched on demand (IG CDN links expire over time).
+  const [picOverride, setPicOverride] = useState<Record<string, string>>({});
+  const [refreshing, setRefreshing] = useState(false);
+  const [refDone, setRefDone] = useState(0);
+
+  // Local copy of the rows so we can enrich them (friendship flags) and refresh
+  // images in place, even for cached profiles that arrived without that data.
+  const [rows, setRows] = useState<GridUser[]>(users);
+  useEffect(() => setRows(users), [users]);
+  const [enriching, setEnriching] = useState(false);
+  const [enrichDone, setEnrichDone] = useState(0);
+
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const favorites = useMemo(() => getFavorites(), [tick]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const categories = useMemo(() => getCategories(), [tick]);
 
   const visible = useMemo(() => {
-    let base = users;
+    let base = rows;
     const q = query.trim().toLowerCase();
     if (catFilter !== "all")
       base = base.filter((u) => getProfileCats(u.username).includes(catFilter));
@@ -71,12 +77,14 @@ export function PeopleGrid({
       base = base.filter((u) =>
         `${u.username} ${u.full_name ?? ""}`.toLowerCase().includes(q)
       );
-    if (enableFollowFilter && followFilter !== "all") {
+    if (followFilter !== "all") {
+      // Strict boolean checks: profiles whose relationship is still unknown
+      // (not enriched) are excluded from both follows/non-follows, never guessed.
       base = base.filter((u) => {
-        if (followFilter === "follows_me") return u.follows_you;
-        if (followFilter === "not_follows_me") return !u.follows_you;
-        if (followFilter === "i_follow") return u.you_follow;
-        if (followFilter === "not_following") return !u.you_follow;
+        if (followFilter === "follows_me") return u.follows_you === true;
+        if (followFilter === "not_follows_me") return u.follows_you === false;
+        if (followFilter === "i_follow") return u.you_follow === true;
+        if (followFilter === "not_following") return u.you_follow === false;
         return true;
       });
     }
@@ -89,7 +97,64 @@ export function PeopleGrid({
     }
     return base;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [users, query, sort, followFilter, privacy, catFilter, tick, enableFollowFilter]);
+  }, [rows, query, sort, followFilter, privacy, catFilter, tick]);
+
+  // Re-fetch fresh profile pictures for the visible profiles (CDN links expire).
+  async function refreshImages() {
+    const targets = visible;
+    if (!targets.length) return;
+    setRefreshing(true);
+    setRefDone(0);
+    for (let i = 0; i < targets.length; i++) {
+      const u = targets[i];
+      try {
+        const r = await getProfile(u.username);
+        if (r.success && r.profile?.profile_pic_url) {
+          setCached(u.username, {
+            profile_pic_url: r.profile.profile_pic_url,
+            full_name: r.profile.full_name, pk: r.profile.pk,
+          });
+          setPicOverride((p) => ({ ...p, [u.username]: r.profile!.profile_pic_url }));
+        }
+      } catch {
+        /* skip */
+      }
+      setRefDone(i + 1);
+      await new Promise((res) => setTimeout(res, 120));
+    }
+    setRefreshing(false);
+    toast.success("Immagini ricaricate");
+  }
+
+  // Check, for the visible profiles, who follows you / who you follow.
+  async function enrichFollow() {
+    const targets = visible.filter((u) => u.pk || getCached(u.username)?.pk);
+    if (!targets.length) {
+      toast.error("Nessun ID disponibile — ricarica le immagini prima");
+      return;
+    }
+    setEnriching(true);
+    setEnrichDone(0);
+    const withPk = targets.map((u) => ({ ...u, pk: u.pk || getCached(u.username)!.pk! }));
+    try {
+      const enriched = await enrichWithFriendship(withPk);
+      const map = new Map(enriched.map((e) => [e.username, e]));
+      setRows((prev) =>
+        prev.map((u) => {
+          const e = map.get(u.username);
+          if (!e) return u;
+          setCached(u.username, { follows_me: e.follows_you, i_follow: e.you_follow, _friendshipLoaded: true });
+          return { ...u, follows_you: e.follows_you, you_follow: e.you_follow };
+        })
+      );
+      setEnrichDone(enriched.length);
+      toast.success("Stato follow aggiornato");
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setEnriching(false);
+    }
+  }
 
   function toggleSel(username: string) {
     setSelected((s) => {
@@ -189,18 +254,16 @@ export function PeopleGrid({
           </SelectContent>
         </Select>
 
-        {enableFollowFilter && (
-          <Select value={followFilter} onValueChange={(v) => setFollowFilter(v as FollowFilter)}>
-            <SelectTrigger className="w-[150px]" size="sm"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">👥 Tutti</SelectItem>
-              <SelectItem value="follows_me">Mi seguono</SelectItem>
-              <SelectItem value="not_follows_me">Non mi seguono</SelectItem>
-              <SelectItem value="i_follow">Seguo</SelectItem>
-              <SelectItem value="not_following">Non seguo</SelectItem>
-            </SelectContent>
-          </Select>
-        )}
+        <Select value={followFilter} onValueChange={(v) => setFollowFilter(v as FollowFilter)}>
+          <SelectTrigger className="w-[150px]" size="sm"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">👥 Tutti</SelectItem>
+            <SelectItem value="follows_me">Mi seguono</SelectItem>
+            <SelectItem value="not_follows_me">Non mi seguono</SelectItem>
+            <SelectItem value="i_follow">Seguo</SelectItem>
+            <SelectItem value="not_following">Non seguo</SelectItem>
+          </SelectContent>
+        </Select>
 
         {categories.length > 0 && (
           <Select value={catFilter} onValueChange={setCatFilter}>
@@ -223,6 +286,14 @@ export function PeopleGrid({
           ))}
         </div>
 
+        <Button size="sm" variant="outline" onClick={enrichFollow} disabled={enriching}>
+          {enriching ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : null}
+          {enriching ? `Controllo ${enrichDone}/${visible.length}` : "Controlla chi ti segue"}
+        </Button>
+        <Button size="sm" variant="outline" onClick={refreshImages} disabled={refreshing}>
+          {refreshing ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <ImageIcon className="mr-1.5 h-4 w-4" />}
+          {refreshing ? `Immagini ${refDone}/${visible.length}` : "Ricarica immagini"}
+        </Button>
         <Button size="sm" variant="outline" onClick={exportCSV}>
           <Download className="mr-1.5 h-4 w-4" /> CSV
         </Button>
@@ -276,7 +347,7 @@ export function PeopleGrid({
           {visible.map((u) => (
             <ProfileCard
               key={u.username}
-              user={u}
+              user={picOverride[u.username] ? { ...u, profile_pic_url: picOverride[u.username] } : u}
               isFav={favorites.has(u.username)}
               onToggleFav={() => { toggleFavorite(u.username); refresh(); }}
               assignedCatIds={getProfileCats(u.username)}

@@ -28,7 +28,7 @@ export function CategoriesView() {
             Analizza/cerca i profili per popolarli.
           </p>
         ) : (
-          <PeopleGrid users={users} enableFollowFilter={false} />
+          <PeopleGrid users={users} />
         )}
       </div>
     );

@@ -7,6 +7,8 @@ import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { AppSidebar, type ViewKey } from "@/components/app-sidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { imgProxy } from "@/lib/api";
 import { ActionAccountDialog } from "@/components/action-account-dialog";
 import { LoginDialog } from "@/components/login-dialog";
 import { OverviewView } from "@/components/views/overview-view";
@@ -15,7 +17,8 @@ import { SearchProfileView } from "@/components/views/search-profile-view";
 import { LikersView } from "@/components/views/likers-view";
 import { FavoritesView } from "@/components/views/favorites-view";
 import { CategoriesView } from "@/components/views/categories-view";
-import { clearMain, runMigrations } from "@/lib/store";
+import { clearMain, runMigrations, setMain } from "@/lib/store";
+import { getProfile } from "@/lib/api";
 import type { Session } from "@/lib/types";
 
 const TITLES: Record<ViewKey, string> = {
@@ -42,6 +45,22 @@ export function AppShell({
   useEffect(() => {
     runMigrations(); // one-time: restore "f" with a flower 🌸
   }, []);
+
+  // Backfill the profile photo for restored sessions so the bottom-right avatar shows.
+  useEffect(() => {
+    if (session && !session.profile_pic_url) {
+      getProfile(session.username)
+        .then((r) => {
+          if (r.success && r.profile?.profile_pic_url) {
+            const upd = { ...session, profile_pic_url: r.profile.profile_pic_url };
+            setMain(upd);
+            onSession(upd);
+          }
+        })
+        .catch(() => {});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.username]);
 
   const loggedIn = !!session;
 
@@ -109,6 +128,32 @@ export function AppShell({
       </SidebarInset>
 
       <LoginDialog open={loginOpen} onOpenChange={setLoginOpen} onLoggedIn={onSession} />
+
+      {/* Bottom-right: your IG profile photo (or login), replacing the Next badge. */}
+      {loggedIn ? (
+        <a
+          href={`https://instagram.com/${session!.username}`}
+          target="_blank"
+          rel="noreferrer"
+          title={`@${session!.username}`}
+          className="fixed bottom-4 right-4 z-50 rounded-full ring-2 ring-border shadow-lg transition-transform hover:scale-105"
+        >
+          <Avatar className="h-11 w-11">
+            {session!.profile_pic_url && (
+              <AvatarImage src={imgProxy(session!.profile_pic_url)} alt={session!.username} />
+            )}
+            <AvatarFallback>{session!.username.slice(0, 2).toUpperCase()}</AvatarFallback>
+          </Avatar>
+        </a>
+      ) : (
+        <Button
+          onClick={() => setLoginOpen(true)}
+          className="fixed bottom-4 right-4 z-50 rounded-full shadow-lg"
+          size="lg"
+        >
+          <LogInIcon className="mr-1.5 h-4 w-4" /> Accedi
+        </Button>
+      )}
     </SidebarProvider>
   );
 }

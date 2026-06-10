@@ -85,11 +85,11 @@ export function HistoryView({ session }: { session: Session | null }) {
           </TabsTrigger>
         </TabsList>
         <TabsContent value="lost" className="mt-4">
-          {lostUsers.length ? <PeopleGrid users={lostUsers} enableFollowFilter={false} />
+          {lostUsers.length ? <PeopleGrid users={lostUsers} />
             : <p className="py-8 text-center text-sm text-muted-foreground">Nessun unfollower 🎉</p>}
         </TabsContent>
         <TabsContent value="gained" className="mt-4">
-          {gainedUsers.length ? <PeopleGrid users={gainedUsers} enableFollowFilter={false} />
+          {gainedUsers.length ? <PeopleGrid users={gainedUsers} />
             : <p className="py-8 text-center text-sm text-muted-foreground">Nessun nuovo follower nel periodo.</p>}
         </TabsContent>
       </Tabs>

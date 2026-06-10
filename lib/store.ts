@@ -191,6 +191,29 @@ export function saveSnapshot(snap: Snapshot) {
   write(SNAP_KEY, trimmed);
 }
 
+// ── Persisted analysis (last followers/following load) ────────────────────────
+// Cached so the user doesn't re-fetch everything on each visit; a fresh fetch is
+// only needed for a new comparison/snapshot.
+import type { IgUser } from "./types";
+
+const ANALYSIS_KEY = "likelens_analysis";
+
+export interface SavedAnalysis {
+  takenAt: number;
+  followers: IgUser[];
+  following: IgUser[];
+}
+
+export function getAnalysis(username: string): SavedAnalysis | null {
+  const all = read<Record<string, SavedAnalysis>>(ANALYSIS_KEY, {});
+  return all[username] ?? null;
+}
+export function saveAnalysis(username: string, a: SavedAnalysis) {
+  const all = read<Record<string, SavedAnalysis>>(ANALYSIS_KEY, {});
+  all[username] = a;
+  write(ANALYSIS_KEY, all);
+}
+
 // ── Auth headers ───────────────────────────────────────────────────────────────
 
 export function authHeaders(): Record<string, string> {

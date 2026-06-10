@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { RefreshCw, Loader2, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,7 @@ import { StatCard } from "@/components/stat-card";
 import { PeopleGrid } from "@/components/people-grid";
 import { fetchAllConnections } from "@/lib/api";
 import { computeRelations } from "@/lib/relations";
-import { cacheMany, saveSnapshot, getSnapshots } from "@/lib/store";
+import { cacheMany, saveSnapshot, getSnapshots, getAnalysis, saveAnalysis } from "@/lib/store";
 import type { IgUser, Session, Snapshot } from "@/lib/types";
 
 export function OverviewView({ session }: { session: Session | null }) {
@@ -18,29 +18,42 @@ export function OverviewView({ session }: { session: Session | null }) {
   const [following, setFollowing] = useState<IgUser[]>([]);
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzed, setAnalyzed] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const [progress, setProgress] = useState({ fol: 0, folg: 0 });
 
   const ownPk = session?.pk || "";
 
+  // Restore the last saved analysis so we don't re-fetch everything each visit.
+  useEffect(() => {
+    if (!session) return;
+    const saved = getAnalysis(session.username);
+    if (saved) {
+      setFollowers(saved.followers);
+      setFollowing(saved.following);
+      setLastUpdated(saved.takenAt);
+      setAnalyzed(true);
+    }
+  }, [session]);
+
   async function analyze() {
-    if (!ownPk) {
+    if (!ownPk || !session) {
       toast.error("ID account non disponibile — riprova il login");
       return;
     }
     setAnalyzing(true);
-    setAnalyzed(false);
     setProgress({ fol: 0, folg: 0 });
     try {
       const fol = await fetchAllConnections(ownPk, "followers", (all) =>
         setProgress((p) => ({ ...p, fol: all.length }))
       );
-      setFollowers(fol);
       const folg = await fetchAllConnections(ownPk, "following", (all) =>
         setProgress((p) => ({ ...p, folg: all.length }))
       );
+      setFollowers(fol);
       setFollowing(folg);
-      // Cache so categories/favorites work cross-session.
-      cacheMany([...fol, ...folg]);
+      cacheMany([...fol, ...folg]); // for categories/favorites cross-session
+      saveAnalysis(session.username, { takenAt: Date.now(), followers: fol, following: folg });
+      setLastUpdated(Date.now());
       setAnalyzed(true);
       toast.success(`${fol.length} follower, ${folg.length} seguiti`);
     } catch (e) {
@@ -88,20 +101,26 @@ export function OverviewView({ session }: { session: Session | null }) {
       <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-card p-4">
         <Button onClick={analyze} disabled={analyzing || !ownPk}>
           {analyzing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-          {analyzed ? "Ri-analizza" : "Analizza follower & seguiti"}
+          {analyzed ? "Aggiorna per confronto" : "Analizza follower & seguiti"}
         </Button>
         {analyzing && (
           <span className="text-sm text-muted-foreground">
             follower {progress.fol} · seguiti {progress.folg}
           </span>
         )}
-        {analyzed && (
+        {analyzed && !analyzing && (
           <>
             <Button variant="outline" size="sm" onClick={snapshot}>
               <Save className="mr-1.5 h-4 w-4" /> Snapshot
             </Button>
+            {lastUpdated && (
+              <span className="text-xs text-muted-foreground">
+                Ultimo aggiornamento: {new Date(lastUpdated).toLocaleString("it-IT")} · dati in
+                cache, non serve ricaricare
+              </span>
+            )}
             {snaps.length > 0 && (
-              <Badge variant="secondary">{snaps.length} snapshot salvati</Badge>
+              <Badge variant="secondary">{snaps.length} snapshot</Badge>
             )}
           </>
         )}
