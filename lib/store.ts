@@ -220,12 +220,37 @@ export function getAnalysis(username: string): SavedAnalysis | null {
   return all[username] ?? null;
 }
 
+// ── Durable profile-picture store (username → url), kept separate from the
+// analysis so pictures survive even when the analysis is trimmed for quota. ────
+const PICS_KEY = "likelens_pics";
+
+export const getPics = (): Record<string, string> =>
+  read<Record<string, string>>(PICS_KEY, {});
+export const getPic = (username: string): string =>
+  getPics()[username.toLowerCase()] || "";
+
+export function setPics(entries: { username: string; profile_pic_url?: string }[]) {
+  const m = getPics();
+  for (const e of entries) {
+    if (e.profile_pic_url) m[e.username.toLowerCase()] = e.profile_pic_url;
+  }
+  if (tryWrite(PICS_KEY, m)) return;
+  // Over quota: keep only the most recently inserted ~8000.
+  const keys = Object.keys(m);
+  const keep = keys.slice(Math.max(0, keys.length - 8000));
+  const trimmed: Record<string, string> = {};
+  for (const k of keep) trimmed[k] = m[k];
+  tryWrite(PICS_KEY, trimmed);
+}
+
 const stripPic = (u: IgUser): IgUser => ({ ...u, profile_pic_url: "" });
 
 // Persist the analysis. Profile-pic URLs are heavy, so if the full payload
 // exceeds the localStorage quota we retry without them — the follow-back data
 // (usernames/pks) is what matters and always fits.
 export function saveAnalysis(username: string, a: SavedAnalysis) {
+  // Persist pictures in the durable pic store first (survives quota trimming).
+  setPics([...a.followers, ...a.following]);
   const all = read<Record<string, SavedAnalysis>>(ANALYSIS_KEY, {});
   all[username] = a;
   if (tryWrite(ANALYSIS_KEY, all)) return;

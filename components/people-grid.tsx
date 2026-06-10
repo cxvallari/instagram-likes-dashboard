@@ -24,7 +24,7 @@ import { ProfileCard, type GridUser } from "@/components/profile-card";
 import { ProfileModal } from "@/components/profile-modal";
 import {
   getFavorites, toggleFavorite, getCategories, getProfileCats, toggleCategory,
-  assignCategory, getCached, setCached,
+  assignCategory, getCached, setCached, getPic, setPics,
 } from "@/lib/store";
 import { followAction, getProfile } from "@/lib/api";
 import { analysisLookup } from "@/lib/grid-utils";
@@ -148,7 +148,11 @@ export function PeopleGrid({ users }: { users: GridUser[] }) {
       if (pic) picUpd[u.username] = pic;
       setRefDone(i + 1);
     }
-    if (Object.keys(picUpd).length) setPicOverride((prev) => ({ ...prev, ...picUpd }));
+    if (Object.keys(picUpd).length) {
+      setPicOverride((prev) => ({ ...prev, ...picUpd }));
+      // Persist so pictures survive a reload.
+      setPics(Object.entries(picUpd).map(([username, profile_pic_url]) => ({ username, profile_pic_url })));
+    }
     setRefreshing(false);
     toast.success("Aggiornato");
   }
@@ -347,7 +351,7 @@ export function PeopleGrid({ users }: { users: GridUser[] }) {
           {visible.map((u) => (
             <ProfileCard
               key={u.username}
-              user={picOverride[u.username] ? { ...u, profile_pic_url: picOverride[u.username] } : u}
+              user={{ ...u, profile_pic_url: picOverride[u.username] || u.profile_pic_url || getPic(u.username) }}
               isFav={favorites.has(u.username)}
               onToggleFav={() => { toggleFavorite(u.username); refresh(); }}
               assignedCatIds={getProfileCats(u.username)}

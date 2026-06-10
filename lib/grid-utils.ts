@@ -1,4 +1,4 @@
-import { getCached, getMain, getAnalysis } from "./store";
+import { getCached, getMain, getAnalysis, getPic } from "./store";
 import type { GridUser } from "@/components/profile-card";
 import type { IgUser } from "./types";
 
@@ -39,7 +39,7 @@ export function usersFromCache(usernames: string[]): GridUser[] {
       pk: a?.pk || c.pk || "",
       username,
       full_name: a?.full_name ?? c.full_name ?? "",
-      profile_pic_url: a?.profile_pic_url || c.profile_pic_url || "",
+      profile_pic_url: getPic(username) || a?.profile_pic_url || c.profile_pic_url || "",
       is_private: a?.is_private ?? c.is_private ?? false,
       is_verified: a?.is_verified ?? c.is_verified ?? false,
       // Follow status strictly from the analysis (reliable); undefined when we
