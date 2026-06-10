@@ -26,6 +26,7 @@ export interface GridUser {
   is_verified: boolean;
   follows_you?: boolean;
   you_follow?: boolean;
+  pending?: boolean;
   follower_count?: number;
   biography?: string;
 }
@@ -187,6 +188,11 @@ export function ProfileCard({
               {user.you_follow && (
                 <span className="rounded border border-white/40 px-1.5 py-0.5 text-[10px] font-medium text-white/90">
                   Segui
+                </span>
+              )}
+              {user.pending && (
+                <span className="rounded bg-white/15 px-1.5 py-0.5 text-[10px] font-medium text-white/90">
+                  In attesa
                 </span>
               )}
             </div>

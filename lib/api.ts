@@ -111,7 +111,7 @@ export async function checkFriendships(
 // account, by batch-querying friendship status.
 export async function enrichWithFriendship<
   T extends { pk: string }
->(users: T[]): Promise<(T & { follows_you: boolean; you_follow: boolean })[]> {
+>(users: T[]): Promise<(T & { follows_you: boolean; you_follow: boolean; pending: boolean })[]> {
   let statuses: Record<string, FriendshipStatus> = {};
   try {
     statuses = await checkFriendships(users.map((u) => u.pk).filter(Boolean));
@@ -120,6 +120,11 @@ export async function enrichWithFriendship<
   }
   return users.map((u) => {
     const st = statuses[u.pk] ?? {};
-    return { ...u, follows_you: Boolean(st.followed_by), you_follow: Boolean(st.following) };
+    return {
+      ...u,
+      follows_you: Boolean(st.followed_by),
+      you_follow: Boolean(st.following),
+      pending: Boolean(st.outgoing_request),
+    };
   });
 }

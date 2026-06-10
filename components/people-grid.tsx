@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
-  Search, Download, CheckSquare, Square, UserMinus, X, Tag, ImageIcon, Loader2,
+  Search, Download, CheckSquare, Square, UserMinus, X, Tag, RefreshCw, Loader2,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -56,12 +56,11 @@ export function PeopleGrid({ users }: { users: GridUser[] }) {
   // Local copy of the rows so we can enrich them (friendship flags) and refresh
   // images in place, even for cached profiles that arrived without that data.
   const [rows, setRows] = useState<GridUser[]>(users);
-  const [enriching, setEnriching] = useState(false);
-  const [enrichDone, setEnrichDone] = useState(0);
+  const [unmutual, setUnmutual] = useState(false); // show only who doesn't follow back
 
-  // On load, auto-apply follow status + fresher pics from your saved analysis
-  // (matched by username). So categories/favorites immediately show who does NOT
-  // follow you back, without any extra click or API call.
+  // On load, apply fresher pics from your saved analysis (matched by username).
+  // Follow status is NOT guessed here — it comes from the accurate "Refresh"
+  // (friendship API), so we never mislabel someone as "Non ti segue".
   useEffect(() => {
     const maps = analysisMaps();
     if (!maps) {
@@ -69,17 +68,11 @@ export function PeopleGrid({ users }: { users: GridUser[] }) {
       return;
     }
     const picUpd: Record<string, string> = {};
-    setRows(
-      users.map((u) => {
-        const k = u.username.toLowerCase();
-        if (maps.pics[k]) picUpd[u.username] = maps.pics[k];
-        return {
-          ...u,
-          follows_you: u.follows_you ?? maps.followers.has(k),
-          you_follow: u.you_follow ?? maps.following.has(k),
-        };
-      })
-    );
+    for (const u of users) {
+      const k = u.username.toLowerCase();
+      if (maps.pics[k]) picUpd[u.username] = maps.pics[k];
+    }
+    setRows(users);
     if (Object.keys(picUpd).length) setPicOverride((prev) => ({ ...prev, ...picUpd }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [users]);
@@ -97,6 +90,8 @@ export function PeopleGrid({ users }: { users: GridUser[] }) {
     if (privacy === "public") base = base.filter((u) => !u.is_private);
     if (privacy === "private") base = base.filter((u) => u.is_private);
     if (privacy === "verified") base = base.filter((u) => u.is_verified);
+    // Unmutual = only profiles that do NOT follow you back (after a Refresh).
+    if (unmutual) base = base.filter((u) => u.follows_you === false);
     if (q)
       base = base.filter((u) =>
         `${u.username} ${u.full_name ?? ""}`.toLowerCase().includes(q)
@@ -121,7 +116,7 @@ export function PeopleGrid({ users }: { users: GridUser[] }) {
     }
     return base;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, query, sort, followFilter, privacy, catFilter, tick]);
+  }, [rows, query, sort, followFilter, privacy, catFilter, tick, unmutual]);
 
   // Pull fresh data from the user's last full analysis (followers/following),
   // matched by username — instant and reliable, no per-profile API calls.
@@ -141,98 +136,67 @@ export function PeopleGrid({ users }: { users: GridUser[] }) {
     return { followers, following, pics, pks };
   }
 
-  // Re-fetch fresh profile pictures for the visible profiles (CDN links expire).
-  // Use the saved analysis first, then the API only for profiles not in it.
-  async function refreshImages() {
+  // Single "Refresh": for the visible profiles, get the real friendship status
+  // (you follow them / they follow you / request pending) and fresh profile pics.
+  async function doRefresh() {
     const targets = visible;
     if (!targets.length) return;
     setRefreshing(true);
     setRefDone(0);
     const maps = analysisMaps();
-    const updates: Record<string, string> = {};
-    const needApi: typeof targets = [];
-    for (const u of targets) {
-      const p = maps?.pics[u.username.toLowerCase()];
-      if (p) {
-        updates[u.username] = p;
-        setCached(u.username, { profile_pic_url: p });
-      } else {
-        needApi.push(u);
-      }
-    }
-    if (Object.keys(updates).length) setPicOverride((prev) => ({ ...prev, ...updates }));
-    setRefDone(targets.length - needApi.length);
-    for (let i = 0; i < needApi.length; i++) {
-      const u = needApi[i];
-      try {
-        const r = await getProfile(u.username);
-        if (r.success && r.profile?.profile_pic_url) {
-          setCached(u.username, {
-            profile_pic_url: r.profile.profile_pic_url,
-            full_name: r.profile.full_name, pk: r.profile.pk,
-          });
-          setPicOverride((p) => ({ ...p, [u.username]: r.profile!.profile_pic_url }));
+    const picUpd: Record<string, string> = {};
+    const resolved: { username: string; pk: string }[] = [];
+
+    for (let i = 0; i < targets.length; i++) {
+      const u = targets[i];
+      const k = u.username.toLowerCase();
+      let pk = u.pk || getCached(u.username)?.pk || maps?.pks[k] || "";
+      let pic = maps?.pics[k] || "";
+      // Need a profile lookup only when pk or picture is still missing.
+      if (!pk || !pic) {
+        try {
+          const r = await getProfile(u.username);
+          if (r.success && r.profile) {
+            pk = pk || r.profile.pk;
+            pic = pic || r.profile.profile_pic_url;
+            setCached(u.username, {
+              pk: r.profile.pk, full_name: r.profile.full_name,
+              profile_pic_url: r.profile.profile_pic_url || undefined,
+            });
+          }
+        } catch {
+          /* skip */
         }
-      } catch {
-        /* skip */
+        await new Promise((res) => setTimeout(res, 100));
       }
-      setRefDone(targets.length - needApi.length + i + 1);
-      await new Promise((res) => setTimeout(res, 120));
+      if (pic) {
+        picUpd[u.username] = pic;
+        setCached(u.username, { profile_pic_url: pic });
+      }
+      if (pk) resolved.push({ username: u.username, pk });
+      setRefDone(i + 1);
+    }
+    if (Object.keys(picUpd).length) setPicOverride((prev) => ({ ...prev, ...picUpd }));
+
+    // Accurate friendship status (following / followed_by / outgoing_request).
+    if (resolved.length) {
+      try {
+        const enriched = await enrichWithFriendship(resolved);
+        const map = new Map(enriched.map((e) => [e.username, e]));
+        setRows((prev) =>
+          prev.map((u) => {
+            const e = map.get(u.username);
+            if (!e) return u;
+            setCached(u.username, { follows_me: e.follows_you, i_follow: e.you_follow, _friendshipLoaded: true });
+            return { ...u, follows_you: e.follows_you, you_follow: e.you_follow, pending: e.pending };
+          })
+        );
+      } catch (e) {
+        toast.error(String(e));
+      }
     }
     setRefreshing(false);
-    toast.success("Immagini ricaricate");
-  }
-
-  // Determine who follows you / who you follow for the visible profiles.
-  async function enrichFollow() {
-    if (!visible.length) return;
-    setEnriching(true);
-    setEnrichDone(0);
-    const maps = analysisMaps();
-
-    // Fast path: resolve from your saved analysis by username (no API calls).
-    if (maps) {
-      setRows((prev) =>
-        prev.map((u) => {
-          const k = u.username.toLowerCase();
-          const fy = maps.followers.has(k);
-          const yf = maps.following.has(k);
-          setCached(u.username, { follows_me: fy, i_follow: yf, _friendshipLoaded: true });
-          return { ...u, follows_you: fy, you_follow: yf };
-        })
-      );
-      setEnriching(false);
-      toast.success("Stato follow calcolato dai tuoi dati");
-      return;
-    }
-
-    // Fallback: query the friendship API (needs pk).
-    const withPk = visible
-      .filter((u) => u.pk || getCached(u.username)?.pk)
-      .map((u) => ({ ...u, pk: u.pk || getCached(u.username)!.pk! }));
-    if (!withPk.length) {
-      setEnriching(false);
-      toast.error("Apri la Dashboard e premi “Analizza” una volta: poi qui sapremo chi non ti segue.");
-      return;
-    }
-    try {
-      const enriched = await enrichWithFriendship(withPk);
-      const map = new Map(enriched.map((e) => [e.username, e]));
-      setRows((prev) =>
-        prev.map((u) => {
-          const e = map.get(u.username);
-          if (!e) return u;
-          setCached(u.username, { follows_me: e.follows_you, i_follow: e.you_follow, _friendshipLoaded: true });
-          return { ...u, follows_you: e.follows_you, you_follow: e.you_follow };
-        })
-      );
-      setEnrichDone(enriched.length);
-      toast.success("Stato follow aggiornato");
-    } catch (e) {
-      toast.error(String(e));
-    } finally {
-      setEnriching(false);
-    }
+    toast.success("Aggiornato");
   }
 
   function toggleSel(username: string) {
@@ -363,15 +327,18 @@ export function PeopleGrid({ users }: { users: GridUser[] }) {
               {f === "all" ? "Tutti" : f === "public" ? "🔓" : f === "private" ? "🔒" : "✓"}
             </Button>
           ))}
+          <Button size="sm" variant={unmutual ? "default" : "outline"}
+            title="Mostra solo chi NON ti segue indietro"
+            onClick={() => setUnmutual((v) => !v)}>
+            Unmutual
+          </Button>
         </div>
 
-        <Button size="sm" variant="outline" onClick={enrichFollow} disabled={enriching}>
-          {enriching ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : null}
-          {enriching ? `Controllo ${enrichDone}/${visible.length}` : "Controlla chi ti segue"}
-        </Button>
-        <Button size="sm" variant="outline" onClick={refreshImages} disabled={refreshing}>
-          {refreshing ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <ImageIcon className="mr-1.5 h-4 w-4" />}
-          {refreshing ? `Immagini ${refDone}/${visible.length}` : "Ricarica immagini"}
+        <Button size="sm" variant="outline" onClick={doRefresh} disabled={refreshing}>
+          {refreshing
+            ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+            : <RefreshCw className="mr-1.5 h-4 w-4" />}
+          {refreshing ? `Refresh ${refDone}/${visible.length}` : "Refresh"}
         </Button>
         <Button size="sm" variant="outline" onClick={exportCSV}>
           <Download className="mr-1.5 h-4 w-4" /> CSV
