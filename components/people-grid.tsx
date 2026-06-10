@@ -57,9 +57,18 @@ export function PeopleGrid({ users }: { users: GridUser[] }) {
   // Local copy of the rows so we can enrich them (friendship flags) and refresh
   // images in place, even for cached profiles that arrived without that data.
   const [rows, setRows] = useState<GridUser[]>(users);
-  const [unmutual, setUnmutual] = useState(false); // show only who doesn't follow back
+  const [unmutual, setUnmutual] = useState(false); // only who doesn't follow back
+  const [mutualOnly, setMutualOnly] = useState(false); // only mutuals
 
   useEffect(() => setRows(users), [users]);
+
+  // Passively persist any pictures currently in memory, so they survive a reload
+  // / leaving the view — regardless of whether the analysis kept them.
+  useEffect(() => {
+    const withPic = users.filter((u) => u.profile_pic_url);
+    if (withPic.length)
+      setPics(withPic.map((u) => ({ username: u.username, profile_pic_url: u.profile_pic_url })));
+  }, [users]);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const favorites = useMemo(() => getFavorites(), [tick]);
@@ -74,8 +83,9 @@ export function PeopleGrid({ users }: { users: GridUser[] }) {
     if (privacy === "public") base = base.filter((u) => !u.is_private);
     if (privacy === "private") base = base.filter((u) => u.is_private);
     if (privacy === "verified") base = base.filter((u) => u.is_verified);
-    // Unmutual = only profiles that do NOT follow you back (after a Refresh).
+    // Unmutual = only who does NOT follow you back; Mutual = follow each other.
     if (unmutual) base = base.filter((u) => u.follows_you === false);
+    if (mutualOnly) base = base.filter((u) => u.follows_you === true && u.you_follow === true);
     if (q)
       base = base.filter((u) =>
         `${u.username} ${u.full_name ?? ""}`.toLowerCase().includes(q)
@@ -100,7 +110,7 @@ export function PeopleGrid({ users }: { users: GridUser[] }) {
     }
     return base;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, query, sort, followFilter, privacy, catFilter, tick, unmutual]);
+  }, [rows, query, sort, followFilter, privacy, catFilter, tick, unmutual, mutualOnly]);
 
   // Single "Refresh": re-derive who follows you / who you follow from your saved
   // analysis (reliable — the friendship API is blocked by Instagram), and pull
@@ -287,8 +297,13 @@ export function PeopleGrid({ users }: { users: GridUser[] }) {
           ))}
           <Button size="sm" variant={unmutual ? "default" : "outline"}
             title="Mostra solo chi NON ti segue indietro"
-            onClick={() => setUnmutual((v) => !v)}>
+            onClick={() => { setUnmutual((v) => !v); setMutualOnly(false); }}>
             Unmutual
+          </Button>
+          <Button size="sm" variant={mutualOnly ? "default" : "outline"}
+            title="Mostra solo i mutual (vi seguite a vicenda)"
+            onClick={() => { setMutualOnly((v) => !v); setUnmutual(false); }}>
+            Mutual
           </Button>
         </div>
 
