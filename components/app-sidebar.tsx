@@ -3,15 +3,15 @@
 import * as React from "react";
 import {
   LayoutDashboardIcon, HistoryIcon, SearchIcon, HeartIcon, StarIcon, TagsIcon,
-  ScanEyeIcon, LogOutIcon, EllipsisVerticalIcon, ShieldIcon,
+  ScanEyeIcon, LogOutIcon, LogInIcon,
 } from "lucide-react";
 import {
   Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent,
   SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem,
 } from "@/components/ui/sidebar";
-import {
-  Avatar, AvatarFallback,
-} from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { imgProxy } from "@/lib/api";
+import type { Session } from "@/lib/types";
 
 export type ViewKey =
   | "overview" | "history" | "search" | "likers" | "favorites" | "categories";
@@ -46,16 +46,16 @@ const GROUPS: {
 export function AppSidebar({
   view,
   onView,
-  username,
+  session,
+  onLoginClick,
   onLogout,
-  onOpenAction,
   ...props
 }: {
   view: ViewKey;
   onView: (v: ViewKey) => void;
-  username: string;
+  session: Session | null;
+  onLoginClick: () => void;
   onLogout: () => void;
-  onOpenAction?: () => void;
 } & React.ComponentProps<typeof Sidebar>) {
   return (
     <Sidebar collapsible="offcanvas" {...props}>
@@ -92,38 +92,40 @@ export function AppSidebar({
             </SidebarGroupContent>
           </SidebarGroup>
         ))}
-
-        {onOpenAction && (
-          <SidebarGroup className="mt-auto">
-            <SidebarGroupContent>
-              <SidebarMenu>
-                <SidebarMenuItem>
-                  <SidebarMenuButton tooltip="Account azione" onClick={onOpenAction}>
-                    <ShieldIcon />
-                    <span>Account azione</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        )}
       </SidebarContent>
 
       <SidebarFooter>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton size="lg" onClick={onLogout}>
-              <Avatar className="h-8 w-8 rounded-lg grayscale">
-                <AvatarFallback className="rounded-lg">
-                  {username.slice(0, 2).toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
-              <div className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-medium">@{username}</span>
-                <span className="truncate text-xs text-muted-foreground">Esci</span>
-              </div>
-              <LogOutIcon className="ml-auto size-4" />
-            </SidebarMenuButton>
+            {session ? (
+              <SidebarMenuButton size="lg" onClick={onLogout} tooltip="Esci">
+                <Avatar className="h-8 w-8 rounded-lg">
+                  {session.profile_pic_url && (
+                    <AvatarImage src={imgProxy(session.profile_pic_url)} alt={session.username} />
+                  )}
+                  <AvatarFallback className="rounded-lg">
+                    {session.username.slice(0, 2).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="grid flex-1 text-left text-sm leading-tight">
+                  <span className="truncate font-medium">@{session.username}</span>
+                  <span className="truncate text-xs text-muted-foreground">Esci</span>
+                </div>
+                <LogOutIcon className="ml-auto size-4" />
+              </SidebarMenuButton>
+            ) : (
+              <SidebarMenuButton size="lg" onClick={onLoginClick} tooltip="Accedi">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted">
+                  <LogInIcon className="size-4" />
+                </div>
+                <div className="grid flex-1 text-left text-sm leading-tight">
+                  <span className="truncate font-medium">Accedi</span>
+                  <span className="truncate text-xs text-muted-foreground">
+                    Connetti il tuo account
+                  </span>
+                </div>
+              </SidebarMenuButton>
+            )}
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>

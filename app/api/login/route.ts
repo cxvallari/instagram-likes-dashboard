@@ -26,19 +26,40 @@ export async function POST(req: NextRequest) {
     /* ignore */
   }
 
-  // Confirm the session actually works and auto-fill the username if missing.
+  // Try to confirm the session, but don't hard-fail: Instagram throttles these
+  // endpoints, so we always derive the pk from the sessionid (ds_user_id) and
+  // save the credentials regardless. The connections endpoints work even when
+  // the profile lookup is throttled.
   const me = await whoAmI({ sessionid, csrftoken, mid });
-  if (!me)
+  let pk = "";
+  try {
+    pk = decodeURIComponent(sessionid).split(":")[0];
+  } catch {
+    pk = "";
+  }
+  if (me) {
+    pk = me.pk || pk;
+    if (!username) username = me.username;
+  }
+
+  if (!pk) {
     return NextResponse.json({
       success: false,
-      error: "Sessionid non valido o scaduto. Riprendilo dai cookie di instagram.com.",
+      error: "Sessionid in un formato non valido. Ricopialo intero dai cookie di instagram.com.",
     });
-  if (!username) username = me.username;
+  }
+  if (!username) {
+    return NextResponse.json({
+      success: false,
+      error: "Inserisci anche lo username (non sono riuscito a rilevarlo da Instagram).",
+    });
+  }
 
   return NextResponse.json({
     success: true,
+    confirmed: !!me,
     username,
-    pk: me.pk,
+    pk,
     sessionid,
     csrftoken,
     mid,

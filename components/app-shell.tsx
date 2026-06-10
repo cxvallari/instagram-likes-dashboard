@@ -1,11 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { LogInIcon } from "lucide-react";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
+import { Button } from "@/components/ui/button";
 import { AppSidebar, type ViewKey } from "@/components/app-sidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { ActionAccountDialog } from "@/components/action-account-dialog";
+import { LoginDialog } from "@/components/login-dialog";
 import { OverviewView } from "@/components/views/overview-view";
 import { HistoryView } from "@/components/views/history-view";
 import { SearchProfileView } from "@/components/views/search-profile-view";
@@ -24,18 +27,23 @@ const TITLES: Record<ViewKey, string> = {
   categories: "Categorie",
 };
 
+const NEEDS_LOGIN: ViewKey[] = ["overview", "history", "search", "likers"];
+
 export function AppShell({
   session,
-  onLogout,
+  onSession,
 }: {
-  session: Session;
-  onLogout: () => void;
+  session: Session | null;
+  onSession: (s: Session | null) => void;
 }) {
   const [view, setView] = useState<ViewKey>("overview");
+  const [loginOpen, setLoginOpen] = useState(false);
 
   useEffect(() => {
     runMigrations(); // one-time: restore "f" with a flower 🌸
   }, []);
+
+  const loggedIn = !!session;
 
   return (
     <SidebarProvider
@@ -50,10 +58,11 @@ export function AppShell({
         variant="inset"
         view={view}
         onView={setView}
-        username={session.username}
+        session={session}
+        onLoginClick={() => setLoginOpen(true)}
         onLogout={() => {
           clearMain();
-          onLogout();
+          onSession(null);
         }}
       />
       <SidebarInset>
@@ -63,7 +72,13 @@ export function AppShell({
             <Separator orientation="vertical" className="mx-2 data-[orientation=vertical]:h-4" />
             <h1 className="text-base font-medium">{TITLES[view]}</h1>
             <div className="ml-auto flex items-center gap-2">
-              <ActionAccountDialog />
+              {loggedIn ? (
+                <ActionAccountDialog />
+              ) : (
+                <Button size="sm" onClick={() => setLoginOpen(true)}>
+                  <LogInIcon className="mr-1.5 h-4 w-4" /> Accedi
+                </Button>
+              )}
               <ThemeToggle />
             </div>
           </div>
@@ -72,6 +87,16 @@ export function AppShell({
         <div className="flex flex-1 flex-col">
           <div className="@container/main flex flex-1 flex-col gap-2">
             <div className="flex flex-col gap-4 px-4 py-4 md:gap-6 md:py-6 lg:px-6">
+              {!loggedIn && NEEDS_LOGIN.includes(view) && (
+                <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed p-8 text-center">
+                  <p className="text-sm text-muted-foreground">
+                    Accedi con il tuo sessionid per usare questa sezione.
+                  </p>
+                  <Button onClick={() => setLoginOpen(true)}>
+                    <LogInIcon className="mr-1.5 h-4 w-4" /> Accedi
+                  </Button>
+                </div>
+              )}
               {view === "overview" && <OverviewView session={session} />}
               {view === "history" && <HistoryView session={session} />}
               {view === "search" && <SearchProfileView />}
@@ -82,6 +107,8 @@ export function AppShell({
           </div>
         </div>
       </SidebarInset>
+
+      <LoginDialog open={loginOpen} onOpenChange={setLoginOpen} onLoggedIn={onSession} />
     </SidebarProvider>
   );
 }

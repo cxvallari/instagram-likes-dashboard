@@ -26,6 +26,7 @@ export interface Session {
   sessionid: string;
   csrftoken?: string;
   mid?: string;
+  profile_pic_url?: string;
 }
 
 // Saved category (matches the legacy data model exactly for 1:1 recovery).

@@ -13,14 +13,14 @@ import { computeRelations } from "@/lib/relations";
 import { cacheMany, saveSnapshot, getSnapshots } from "@/lib/store";
 import type { IgUser, Session, Snapshot } from "@/lib/types";
 
-export function OverviewView({ session }: { session: Session }) {
+export function OverviewView({ session }: { session: Session | null }) {
   const [followers, setFollowers] = useState<IgUser[]>([]);
   const [following, setFollowing] = useState<IgUser[]>([]);
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzed, setAnalyzed] = useState(false);
   const [progress, setProgress] = useState({ fol: 0, folg: 0 });
 
-  const ownPk = session.pk || "";
+  const ownPk = session?.pk || "";
 
   async function analyze() {
     if (!ownPk) {
@@ -57,6 +57,7 @@ export function OverviewView({ session }: { session: Session }) {
   const ratio = followingCount > 0 ? (followerCount / followingCount).toFixed(2) : "—";
 
   function snapshot() {
+    if (!session) return;
     const snap: Snapshot = {
       takenAt: Date.now(), username: session.username,
       follower_count: followers.length, following_count: following.length,
@@ -66,7 +67,7 @@ export function OverviewView({ session }: { session: Session }) {
     saveSnapshot(snap);
     toast.success("Snapshot salvato");
   }
-  const snaps = analyzed ? getSnapshots(session.username) : [];
+  const snaps = analyzed && session ? getSnapshots(session.username) : [];
 
   return (
     <div className="space-y-5">

@@ -12,8 +12,8 @@ import type { Session } from "@/lib/types";
 
 // Compares the two most recent snapshots to surface who unfollowed you and who's
 // new — the single most-requested feature for a basic Instagram user.
-export function HistoryView({ session }: { session: Session }) {
-  const snaps = getSnapshots(session.username);
+export function HistoryView({ session }: { session: Session | null }) {
+  const snaps = session ? getSnapshots(session.username) : [];
 
   const diff = useMemo(() => {
     if (snaps.length < 2) return null;

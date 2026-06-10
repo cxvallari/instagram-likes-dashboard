@@ -1,18 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { LoginScreen } from "@/components/login-screen";
 import { AppShell } from "@/components/app-shell";
 import { getMain } from "@/lib/store";
 import type { Session } from "@/lib/types";
 
-// Derive the numeric account id from the sessionid (ds_user_id), so accounts
-// logged in via the legacy app — which never stored pk — still work.
-function withPk(s: Session): Session {
+// Derive the numeric account id from the sessionid (ds_user_id) for legacy
+// sessions that never stored pk.
+function withPk(s: Session | null): Session | null {
+  if (!s) return null;
   if (s.pk) return s;
   try {
-    const pk = decodeURIComponent(s.sessionid).split(":")[0];
-    return { ...s, pk };
+    return { ...s, pk: decodeURIComponent(s.sessionid).split(":")[0] };
   } catch {
     return s;
   }
@@ -23,16 +22,13 @@ export default function Home() {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    const s = getMain();
-    setSession(s ? withPk(s) : null);
+    setSession(withPk(getMain()));
     setReady(true);
   }, []);
 
   if (!ready) return null;
 
-  return session ? (
-    <AppShell session={session} onLogout={() => setSession(null)} />
-  ) : (
-    <LoginScreen onLoggedIn={(s) => setSession(withPk(s))} />
+  return (
+    <AppShell session={session} onSession={(s) => setSession(withPk(s))} />
   );
 }
