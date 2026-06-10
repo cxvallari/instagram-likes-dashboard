@@ -113,10 +113,7 @@ export function ProfileCard({
             className="absolute right-1.5 top-1.5 z-10 rounded-full bg-black/45 p-1.5 backdrop-blur transition-colors hover:bg-black/70"
           >
             <Star
-              className={cn(
-                "h-4 w-4",
-                isFav ? "fill-amber-400 text-amber-400" : "text-white"
-              )}
+              className={cn("h-4 w-4", isFav ? "fill-white text-white" : "text-white/70")}
             />
           </button>
 
@@ -162,7 +159,7 @@ export function ProfileCard({
                 @{user.username}
               </span>
               {user.is_verified && (
-                <BadgeCheck className="h-3.5 w-3.5 shrink-0 text-sky-400" />
+                <BadgeCheck className="h-3.5 w-3.5 shrink-0 text-white" />
               )}
               {user.is_private && (
                 <Lock className="h-3 w-3 shrink-0 text-white/70" />
@@ -174,16 +171,16 @@ export function ProfileCard({
             <div className="mt-1 flex flex-wrap gap-1">
               {user.follows_you !== undefined &&
                 (user.follows_you ? (
-                  <span className="rounded bg-emerald-500/80 px-1.5 py-0.5 text-[10px] font-medium text-white">
+                  <span className="rounded bg-white/25 px-1.5 py-0.5 text-[10px] font-medium text-white">
                     Ti segue
                   </span>
                 ) : (
-                  <span className="rounded bg-red-500/80 px-1.5 py-0.5 text-[10px] font-medium text-white">
+                  <span className="rounded border border-white/40 px-1.5 py-0.5 text-[10px] font-medium text-white/90">
                     Non ti segue
                   </span>
                 ))}
               {user.you_follow && (
-                <span className="rounded bg-white/25 px-1.5 py-0.5 text-[10px] font-medium text-white">
+                <span className="rounded border border-white/40 px-1.5 py-0.5 text-[10px] font-medium text-white/90">
                   Segui
                 </span>
               )}

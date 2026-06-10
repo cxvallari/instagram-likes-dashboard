@@ -12,6 +12,28 @@ Deploy: Vercel (progetto già linkato, cartella `.vercel/`).
 
 ---
 
+## SESSIONE 3 — UI = shadcn dashboard-01 esatto, solo locale (2026-06-10)
+
+Raffa: voleva ESATTAMENTE lo stile dell'esempio ufficiale shadcn dashboard-01
+(neutral, MONOCROMATICO, niente colori), e girare SOLO in locale (niente Vercel).
+
+- Installato blocco ufficiale: `npx shadcn add dashboard-01` → componenti
+  `app-sidebar`, `site-header`, `section-cards`, `nav-*`, `data-table`,
+  `chart-area-interactive` + deps (recharts, @tanstack/react-table, dnd-kit, vaul, zod).
+- `components/app-sidebar.tsx` riscritto in stile esempio (header brand LikeLens,
+  gruppi Home/Strumenti/Organizza, utente in basso), cablato al view-switch.
+- `components/app-shell.tsx` = shell esempio: `SidebarProvider` con `--sidebar-width`
+  /`--header-height`, `AppSidebar variant="inset"`, header con `SidebarTrigger`.
+- `StatCard` riscritto IDENTICO a `section-cards` (CardDescription/CardTitle/
+  CardAction+Badge outline/CardFooter), `@container/card`, niente colori.
+- TOLTI tutti i colori: card follow-badge → bianco/bordi, verificato → bianco,
+  stella → bianca, Cronologia → tabular-nums neutro. Tema `neutral` (components.json).
+- Rimossa la route demo `app/dashboard` (page+data.json). I componenti demo
+  (data-table, chart, nav-*) restano inutilizzati ma compilano.
+- SOLO LOCALE: `npm run dev` → http://localhost:3000. Niente deploy Vercel in questa
+  sessione. (Codice resta deployabile, ma non richiesto.)
+- Build verde, dev server verificato (homepage 200, login render).
+
 ## SESSIONE 2 — Revisione totale (2026-06-10)
 
 Raffa: la prima riscrittura aveva TOLTO funzioni e la UI era brutta. Revisionato.

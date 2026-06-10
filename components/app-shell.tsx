@@ -1,17 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  LayoutDashboard, History, Search, Heart, Star, Tags, ScanEye, LogOut,
-} from "lucide-react";
-import {
-  Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent,
-  SidebarGroupLabel, SidebarHeader, SidebarInset, SidebarMenu, SidebarMenuButton,
-  SidebarMenuItem, SidebarProvider, SidebarTrigger,
-} from "@/components/ui/sidebar";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
+import { AppSidebar, type ViewKey } from "@/components/app-sidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { ActionAccountDialog } from "@/components/action-account-dialog";
 import { OverviewView } from "@/components/views/overview-view";
@@ -23,34 +15,8 @@ import { CategoriesView } from "@/components/views/categories-view";
 import { clearMain, runMigrations } from "@/lib/store";
 import type { Session } from "@/lib/types";
 
-type ViewKey = "overview" | "history" | "search" | "likers" | "favorites" | "categories";
-
-const NAV: { group: string; items: { key: ViewKey; label: string; icon: typeof Heart }[] }[] = [
-  {
-    group: "Principale",
-    items: [
-      { key: "overview", label: "Panoramica", icon: LayoutDashboard },
-      { key: "history", label: "Cronologia", icon: History },
-    ],
-  },
-  {
-    group: "Esplora",
-    items: [
-      { key: "search", label: "Cerca profilo", icon: Search },
-      { key: "likers", label: "Like di un post", icon: Heart },
-    ],
-  },
-  {
-    group: "Organizza",
-    items: [
-      { key: "favorites", label: "Preferiti", icon: Star },
-      { key: "categories", label: "Categorie", icon: Tags },
-    ],
-  },
-];
-
 const TITLES: Record<ViewKey, string> = {
-  overview: "Panoramica",
+  overview: "Dashboard",
   history: "Cronologia",
   search: "Cerca profilo",
   likers: "Like di un post",
@@ -72,70 +38,49 @@ export function AppShell({
   }, []);
 
   return (
-    <SidebarProvider>
-      <Sidebar>
-        <SidebarHeader>
-          <div className="flex items-center gap-2 px-2 py-1.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-fuchsia-500 to-sky-500 text-white">
-              <ScanEye className="h-5 w-5" />
-            </div>
-            <div className="leading-tight">
-              <p className="text-sm font-bold">LikeLens</p>
-              <p className="text-xs text-muted-foreground">@{session.username}</p>
-            </div>
-          </div>
-        </SidebarHeader>
-        <SidebarContent>
-          {NAV.map((g) => (
-            <SidebarGroup key={g.group}>
-              <SidebarGroupLabel>{g.group}</SidebarGroupLabel>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  {g.items.map((it) => (
-                    <SidebarMenuItem key={it.key}>
-                      <SidebarMenuButton
-                        isActive={view === it.key}
-                        onClick={() => setView(it.key)}
-                      >
-                        <it.icon />
-                        <span>{it.label}</span>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  ))}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
-          ))}
-        </SidebarContent>
-        <SidebarFooter>
-          <div className="flex items-center justify-between px-2">
-            <ThemeToggle />
-            <Button variant="ghost" size="icon" onClick={() => { clearMain(); onLogout(); }} title="Esci">
-              <LogOut className="h-4 w-4" />
-            </Button>
-          </div>
-        </SidebarFooter>
-      </Sidebar>
-
+    <SidebarProvider
+      style={
+        {
+          "--sidebar-width": "calc(var(--spacing) * 72)",
+          "--header-height": "calc(var(--spacing) * 12)",
+        } as React.CSSProperties
+      }
+    >
+      <AppSidebar
+        variant="inset"
+        view={view}
+        onView={setView}
+        username={session.username}
+        onLogout={() => {
+          clearMain();
+          onLogout();
+        }}
+      />
       <SidebarInset>
-        <header className="sticky top-0 z-10 flex h-14 items-center gap-2 border-b bg-background/80 px-4 backdrop-blur">
-          <SidebarTrigger />
-          <Separator orientation="vertical" className="mr-1 h-5" />
-          <h1 className="text-sm font-semibold">{TITLES[view]}</h1>
-          <Badge variant="secondary" className="hidden sm:inline-flex">@{session.username}</Badge>
-          <div className="ml-auto">
-            <ActionAccountDialog />
+        <header className="flex h-(--header-height) shrink-0 items-center gap-2 border-b transition-[width,height] ease-linear">
+          <div className="flex w-full items-center gap-1 px-4 lg:gap-2 lg:px-6">
+            <SidebarTrigger className="-ml-1" />
+            <Separator orientation="vertical" className="mx-2 data-[orientation=vertical]:h-4" />
+            <h1 className="text-base font-medium">{TITLES[view]}</h1>
+            <div className="ml-auto flex items-center gap-2">
+              <ActionAccountDialog />
+              <ThemeToggle />
+            </div>
           </div>
         </header>
 
-        <main className="flex-1 p-4 sm:p-6">
-          {view === "overview" && <OverviewView session={session} />}
-          {view === "history" && <HistoryView session={session} />}
-          {view === "search" && <SearchProfileView />}
-          {view === "likers" && <LikersView />}
-          {view === "favorites" && <FavoritesView />}
-          {view === "categories" && <CategoriesView />}
-        </main>
+        <div className="flex flex-1 flex-col">
+          <div className="@container/main flex flex-1 flex-col gap-2">
+            <div className="flex flex-col gap-4 px-4 py-4 md:gap-6 md:py-6 lg:px-6">
+              {view === "overview" && <OverviewView session={session} />}
+              {view === "history" && <HistoryView session={session} />}
+              {view === "search" && <SearchProfileView />}
+              {view === "likers" && <LikersView />}
+              {view === "favorites" && <FavoritesView />}
+              {view === "categories" && <CategoriesView />}
+            </div>
+          </div>
+        </div>
       </SidebarInset>
     </SidebarProvider>
   );

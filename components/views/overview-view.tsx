@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Users, UserCheck, UserX, Heart, Percent, RefreshCw, Loader2, Save } from "lucide-react";
+import { RefreshCw, Loader2, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -70,13 +70,18 @@ export function OverviewView({ session }: { session: Session }) {
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        <StatCard icon={Users} label="Follower" value={followerCount} accent="blue" />
-        <StatCard icon={UserCheck} label="Seguiti" value={followingCount} />
-        <StatCard icon={Percent} label="Ratio" value={ratio} accent="amber" />
-        <StatCard icon={UserX} label="Non ti seguono"
-          value={analyzed ? rel.notFollowingBack.length : "—"} accent="red" />
-        <StatCard icon={Heart} label="Fan" value={analyzed ? rel.fans.length : "—"} accent="green" />
+      <div className="grid grid-cols-1 gap-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs @xl/main:grid-cols-2 @5xl/main:grid-cols-4 dark:*:data-[slot=card]:bg-card">
+        <StatCard label="Follower" value={followerCount}
+          badge={{ text: `ratio ${ratio}`, up: Number(ratio) >= 1 }}
+          footer="Chi ti segue" footerSub="Totale follower dell'account" />
+        <StatCard label="Seguiti" value={followingCount}
+          footer="Chi segui tu" footerSub="Account che segui" />
+        <StatCard label="Non ti seguono"
+          value={analyzed ? rel.notFollowingBack.length : "—"}
+          badge={analyzed ? { text: "da gestire", up: false } : undefined}
+          footer="Segui tu, non ricambiano" footerSub="Candidati all'unfollow" />
+        <StatCard label="Fan" value={analyzed ? rel.fans.length : "—"}
+          footer="Ti seguono, non ricambi" footerSub="Potresti seguirli" />
       </div>
 
       <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-card p-4">

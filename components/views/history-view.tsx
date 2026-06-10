@@ -54,20 +54,19 @@ export function HistoryView({ session }: { session: Session }) {
     <div className="space-y-5">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         <Card><CardContent className="flex items-center gap-3 p-4">
-          <div className="rounded-lg bg-muted p-2.5 text-red-500"><UserMinus className="h-5 w-5" /></div>
+          <div className="rounded-lg bg-muted p-2.5 text-muted-foreground"><UserMinus className="h-5 w-5" /></div>
           <div><p className="text-xs uppercase text-muted-foreground">Unfollower</p>
-            <p className="text-2xl font-bold text-red-500">{diff.lost.length}</p></div>
+            <p className="text-2xl font-bold tabular-nums">{diff.lost.length}</p></div>
         </CardContent></Card>
         <Card><CardContent className="flex items-center gap-3 p-4">
-          <div className="rounded-lg bg-muted p-2.5 text-emerald-500"><UserPlus className="h-5 w-5" /></div>
+          <div className="rounded-lg bg-muted p-2.5 text-muted-foreground"><UserPlus className="h-5 w-5" /></div>
           <div><p className="text-xs uppercase text-muted-foreground">Nuovi follower</p>
-            <p className="text-2xl font-bold text-emerald-500">{diff.gained.length}</p></div>
+            <p className="text-2xl font-bold tabular-nums">{diff.gained.length}</p></div>
         </CardContent></Card>
         <Card><CardContent className="flex items-center gap-3 p-4">
-          <div className="rounded-lg bg-muted p-2.5 text-sky-500"><History className="h-5 w-5" /></div>
+          <div className="rounded-lg bg-muted p-2.5 text-muted-foreground"><History className="h-5 w-5" /></div>
           <div><p className="text-xs uppercase text-muted-foreground">Saldo</p>
-            <p className={`text-2xl font-bold ${net >= 0 ? "text-emerald-500" : "text-red-500"}`}>
-              {net >= 0 ? "+" : ""}{net}</p></div>
+            <p className="text-2xl font-bold tabular-nums">{net >= 0 ? "+" : ""}{net}</p></div>
         </CardContent></Card>
       </div>
 
