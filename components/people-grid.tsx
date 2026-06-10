@@ -24,7 +24,7 @@ import { ProfileCard, type GridUser } from "@/components/profile-card";
 import { ProfileModal } from "@/components/profile-modal";
 import {
   getFavorites, toggleFavorite, getCategories, getProfileCats, toggleCategory,
-  assignCategory, getCached, setCached,
+  assignCategory, getCached, setCached, getMain, getAnalysis,
 } from "@/lib/store";
 import { followAction, getProfile, enrichWithFriendship } from "@/lib/api";
 import type { FollowFilter, PrivacyFilter, SortKey } from "@/lib/types";
@@ -56,9 +56,33 @@ export function PeopleGrid({ users }: { users: GridUser[] }) {
   // Local copy of the rows so we can enrich them (friendship flags) and refresh
   // images in place, even for cached profiles that arrived without that data.
   const [rows, setRows] = useState<GridUser[]>(users);
-  useEffect(() => setRows(users), [users]);
   const [enriching, setEnriching] = useState(false);
   const [enrichDone, setEnrichDone] = useState(0);
+
+  // On load, auto-apply follow status + fresher pics from your saved analysis
+  // (matched by username). So categories/favorites immediately show who does NOT
+  // follow you back, without any extra click or API call.
+  useEffect(() => {
+    const maps = analysisMaps();
+    if (!maps) {
+      setRows(users);
+      return;
+    }
+    const picUpd: Record<string, string> = {};
+    setRows(
+      users.map((u) => {
+        const k = u.username.toLowerCase();
+        if (maps.pics[k]) picUpd[u.username] = maps.pics[k];
+        return {
+          ...u,
+          follows_you: u.follows_you ?? maps.followers.has(k),
+          you_follow: u.you_follow ?? maps.following.has(k),
+        };
+      })
+    );
+    if (Object.keys(picUpd).length) setPicOverride((prev) => ({ ...prev, ...picUpd }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [users]);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const favorites = useMemo(() => getFavorites(), [tick]);
@@ -99,14 +123,47 @@ export function PeopleGrid({ users }: { users: GridUser[] }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, query, sort, followFilter, privacy, catFilter, tick]);
 
+  // Pull fresh data from the user's last full analysis (followers/following),
+  // matched by username — instant and reliable, no per-profile API calls.
+  function analysisMaps() {
+    const me = getMain();
+    const a = me ? getAnalysis(me.username) : null;
+    if (!a) return null;
+    const followers = new Set(a.followers.map((u) => u.username.toLowerCase()));
+    const following = new Set(a.following.map((u) => u.username.toLowerCase()));
+    const pics: Record<string, string> = {};
+    const pks: Record<string, string> = {};
+    for (const u of [...a.followers, ...a.following]) {
+      const k = u.username.toLowerCase();
+      if (u.profile_pic_url) pics[k] = u.profile_pic_url;
+      if (u.pk) pks[k] = u.pk;
+    }
+    return { followers, following, pics, pks };
+  }
+
   // Re-fetch fresh profile pictures for the visible profiles (CDN links expire).
+  // Use the saved analysis first, then the API only for profiles not in it.
   async function refreshImages() {
     const targets = visible;
     if (!targets.length) return;
     setRefreshing(true);
     setRefDone(0);
-    for (let i = 0; i < targets.length; i++) {
-      const u = targets[i];
+    const maps = analysisMaps();
+    const updates: Record<string, string> = {};
+    const needApi: typeof targets = [];
+    for (const u of targets) {
+      const p = maps?.pics[u.username.toLowerCase()];
+      if (p) {
+        updates[u.username] = p;
+        setCached(u.username, { profile_pic_url: p });
+      } else {
+        needApi.push(u);
+      }
+    }
+    if (Object.keys(updates).length) setPicOverride((prev) => ({ ...prev, ...updates }));
+    setRefDone(targets.length - needApi.length);
+    for (let i = 0; i < needApi.length; i++) {
+      const u = needApi[i];
       try {
         const r = await getProfile(u.username);
         if (r.success && r.profile?.profile_pic_url) {
@@ -119,23 +176,45 @@ export function PeopleGrid({ users }: { users: GridUser[] }) {
       } catch {
         /* skip */
       }
-      setRefDone(i + 1);
+      setRefDone(targets.length - needApi.length + i + 1);
       await new Promise((res) => setTimeout(res, 120));
     }
     setRefreshing(false);
     toast.success("Immagini ricaricate");
   }
 
-  // Check, for the visible profiles, who follows you / who you follow.
+  // Determine who follows you / who you follow for the visible profiles.
   async function enrichFollow() {
-    const targets = visible.filter((u) => u.pk || getCached(u.username)?.pk);
-    if (!targets.length) {
-      toast.error("Nessun ID disponibile — ricarica le immagini prima");
-      return;
-    }
+    if (!visible.length) return;
     setEnriching(true);
     setEnrichDone(0);
-    const withPk = targets.map((u) => ({ ...u, pk: u.pk || getCached(u.username)!.pk! }));
+    const maps = analysisMaps();
+
+    // Fast path: resolve from your saved analysis by username (no API calls).
+    if (maps) {
+      setRows((prev) =>
+        prev.map((u) => {
+          const k = u.username.toLowerCase();
+          const fy = maps.followers.has(k);
+          const yf = maps.following.has(k);
+          setCached(u.username, { follows_me: fy, i_follow: yf, _friendshipLoaded: true });
+          return { ...u, follows_you: fy, you_follow: yf };
+        })
+      );
+      setEnriching(false);
+      toast.success("Stato follow calcolato dai tuoi dati");
+      return;
+    }
+
+    // Fallback: query the friendship API (needs pk).
+    const withPk = visible
+      .filter((u) => u.pk || getCached(u.username)?.pk)
+      .map((u) => ({ ...u, pk: u.pk || getCached(u.username)!.pk! }));
+    if (!withPk.length) {
+      setEnriching(false);
+      toast.error("Apri la Dashboard e premi “Analizza” una volta: poi qui sapremo chi non ti segue.");
+      return;
+    }
     try {
       const enriched = await enrichWithFriendship(withPk);
       const map = new Map(enriched.map((e) => [e.username, e]));

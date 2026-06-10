@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import { BadgeCheck, Lock, Star, Check } from "lucide-react";
 import {
@@ -59,6 +60,9 @@ export function ProfileCard({
   const igUrl = `https://www.instagram.com/${user.username}/`;
   const pic = user.profile_pic_url ? imgProxy(user.profile_pic_url) : "";
   const assignedCats = categories.filter((c) => assignedCatIds.includes(c.id));
+  // Broken/expired CDN links fall back to a placeholder instead of a blank box.
+  const [errored, setErrored] = useState(false);
+  useEffect(() => setErrored(false), [pic]);
 
   function handleMouseDown(e: React.MouseEvent) {
     // Middle-click opens the Instagram profile in a new tab.
@@ -90,7 +94,7 @@ export function ProfileCard({
           )}
         >
           {/* Avatar fills the square */}
-          {pic ? (
+          {pic && !errored ? (
             <Image
               src={pic}
               alt={user.username}
@@ -98,6 +102,7 @@ export function ProfileCard({
               sizes="(max-width:640px) 45vw, 180px"
               className="object-cover transition-transform duration-300 group-hover:scale-105"
               unoptimized
+              onError={() => setErrored(true)}
             />
           ) : (
             <div className="flex h-full w-full items-center justify-center text-4xl text-muted-foreground">
