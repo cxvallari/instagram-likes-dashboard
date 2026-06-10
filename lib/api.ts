@@ -106,3 +106,20 @@ export async function checkFriendships(
   const data = await jpost("/api/friendships", { user_ids: userIds });
   return data.success ? data.statuses : {};
 }
+
+// Enrich a list of users with follows_you / you_follow relative to the logged-in
+// account, by batch-querying friendship status.
+export async function enrichWithFriendship<
+  T extends { pk: string }
+>(users: T[]): Promise<(T & { follows_you: boolean; you_follow: boolean })[]> {
+  let statuses: Record<string, FriendshipStatus> = {};
+  try {
+    statuses = await checkFriendships(users.map((u) => u.pk).filter(Boolean));
+  } catch {
+    /* degraded — flags default to false */
+  }
+  return users.map((u) => {
+    const st = statuses[u.pk] ?? {};
+    return { ...u, follows_you: Boolean(st.followed_by), you_follow: Boolean(st.following) };
+  });
+}
