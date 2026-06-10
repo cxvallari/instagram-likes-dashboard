@@ -175,26 +175,42 @@ export function ProfileCard({
               <p className="truncate text-xs text-white/70">{user.full_name}</p>
             )}
             <div className="mt-1 flex flex-wrap gap-1">
-              {user.follows_you !== undefined &&
-                (user.follows_you ? (
-                  <span className="rounded bg-white/25 px-1.5 py-0.5 text-[10px] font-medium text-white">
-                    Ti segue
+              {(() => {
+                if (user.pending)
+                  return (
+                    <span className="rounded bg-white/15 px-1.5 py-0.5 text-[10px] font-medium text-white/90">
+                      Richiesta inviata
+                    </span>
+                  );
+                if (user.follows_you === undefined && user.you_follow === undefined)
+                  return null;
+                const fy = user.follows_you;
+                const yf = user.you_follow;
+                // One unambiguous relationship chip.
+                if (yf && fy)
+                  return (
+                    <span className="rounded bg-white/25 px-1.5 py-0.5 text-[10px] font-medium text-white">
+                      Mutual
+                    </span>
+                  );
+                if (yf && !fy)
+                  return (
+                    <span className="rounded border border-white/50 px-1.5 py-0.5 text-[10px] font-medium text-white">
+                      Non ti segue
+                    </span>
+                  );
+                if (!yf && fy)
+                  return (
+                    <span className="rounded bg-white/25 px-1.5 py-0.5 text-[10px] font-medium text-white">
+                      Ti segue
+                    </span>
+                  );
+                return (
+                  <span className="rounded border border-white/30 px-1.5 py-0.5 text-[10px] font-medium text-white/70">
+                    Nessuna relazione
                   </span>
-                ) : (
-                  <span className="rounded border border-white/40 px-1.5 py-0.5 text-[10px] font-medium text-white/90">
-                    Non ti segue
-                  </span>
-                ))}
-              {user.you_follow && (
-                <span className="rounded border border-white/40 px-1.5 py-0.5 text-[10px] font-medium text-white/90">
-                  Segui
-                </span>
-              )}
-              {user.pending && (
-                <span className="rounded bg-white/15 px-1.5 py-0.5 text-[10px] font-medium text-white/90">
-                  In attesa
-                </span>
-              )}
+                );
+              })()}
             </div>
           </div>
         </div>
