@@ -12,6 +12,70 @@ Deploy: Vercel (progetto già linkato, cartella `.vercel/`).
 
 ---
 
+## SESSIONE 2 — Revisione totale (2026-06-10)
+
+Raffa: la prima riscrittura aveva TOLTO funzioni e la UI era brutta. Revisionato.
+
+### RECUPERO DATI (categoria "f" + preferiti)
+I dati NON erano persi. Il nuovo app ora usa **le STESSE chiavi localStorage del
+vecchio**: `likelens_session`, `likelens_action`, `likelens_categories`,
+`likelens_profile_cats` (assegnazioni keyed by **username**), `likelens_favs`,
+`likelens_cache`. Quindi sessione, categorie (inclusa "f"), assegnazioni e
+preferiti **riappaiono da soli** riaprendo il sito NELLO STESSO BROWSER dove
+erano stati salvati (localStorage è per-browser/per-device). `runMigrations()`
+dà alla categoria "f" l'emoji 🌸 una volta sola (flag `likelens_migrated_f_v1`).
+
+### UI nuova (shadcn dashboard + sidebar)
+- Layout `SidebarProvider`/`Sidebar` shadcn, nav raggruppata (Principale/Esplora/
+  Organizza), font Geist (lo stesso di ui.shadcn.com).
+- **Card a quadrati** (`profile-card.tsx`): avatar di sfondo, overlay, badge
+  verificato/privato, chip categorie, stella preferiti, badge follow.
+- **Middle-click** apre il profilo IG in nuova tab.
+- **Tasto destro** (`ContextMenu`): apri IG, copia username, preferito,
+  assegna/togli categoria, segui/smetti di seguire.
+
+### Funzioni RIPRISTINATE
+- **Cerca profilo**: analizza follower/following di QUALSIASI account (arricchiti
+  con la tua relazione → badge "ti segue/segui").
+- **Preferiti** ⭐, **Categorie** (emoji/colore/crea/modifica/elimina/assegna/
+  filtra/visualizza profili in cache), **filtri follow** 5 stati, **sort**,
+  selezione + bulk, **modal profilo** (carica suoi follower/following).
+
+### Funzione NUOVA
+- **Cronologia** (`history-view.tsx`): confronta gli ultimi 2 snapshot →
+  **unfollower** (chi ti ha tolto il follow) + **nuovi follower** + saldo.
+  Snapshot ora salvano username (non pk) per il diff e il display. Max 10/account.
+
+### RIMOSSE (richiesta Raffa)
+- Gender detection / AI settings (route, modali, config key).
+- **Auto-follow**: niente follow di massa. Resta solo unfollow bulk + follow
+  singolo manuale dal menu contestuale.
+
+### Architettura nuova
+```
+app/page.tsx           # login gate → AppShell (deriva pk da sessionid se mancante)
+components/
+  app-shell.tsx        # SidebarProvider + nav + switch viste
+  profile-card.tsx     # card quadrata + context menu + middle-click
+  people-grid.tsx      # filtri + griglia + selezione + bulk unfollow
+  profile-modal.tsx    # dettaglio profilo (carica follower/following)
+  category-manager.tsx # CRUD categorie
+  views/               # overview, history, search-profile, likers, favorites, categories
+lib/
+  store.ts             # chiavi likelens_* + categorie + preferiti + cache + snapshot + migrazione
+  grid-utils.ts        # GridUser da cache (preferiti/categorie cross-session)
+  relations.ts         # computeRelations
+  api.ts               # client fetch + enrichWithFriendship
+```
+
+### NOTE/LIMITI sessione 2
+- Recupero categoria/preferiti funziona SOLO nel browser dove erano salvati.
+- Profile data ancora throttled da IP datacenter (vedi sotto), ma connections/
+  friendships funzionano → cerca-profilo e badge relazione OK in prod.
+- bulkMode follow rimosso; `Slider` shadcn per il delay unfollow.
+
+---
+
 ## Stack attuale (v1.0.0)
 
 - **Next.js 16.2.9** (App Router, Turbopack) + **React 19.2** + **TypeScript**
