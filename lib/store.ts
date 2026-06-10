@@ -33,6 +33,17 @@ function write(key: string, value: unknown) {
   }
 }
 
+// Returns false instead of throwing when the quota is exceeded.
+function tryWrite(key: string, value: unknown): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // ── Sessions ───────────────────────────────────────────────────────────────────
 
 export const getMain = (): Session | null => {
@@ -208,10 +219,25 @@ export function getAnalysis(username: string): SavedAnalysis | null {
   const all = read<Record<string, SavedAnalysis>>(ANALYSIS_KEY, {});
   return all[username] ?? null;
 }
+
+const stripPic = (u: IgUser): IgUser => ({ ...u, profile_pic_url: "" });
+
+// Persist the analysis. Profile-pic URLs are heavy, so if the full payload
+// exceeds the localStorage quota we retry without them — the follow-back data
+// (usernames/pks) is what matters and always fits.
 export function saveAnalysis(username: string, a: SavedAnalysis) {
   const all = read<Record<string, SavedAnalysis>>(ANALYSIS_KEY, {});
   all[username] = a;
-  write(ANALYSIS_KEY, all);
+  if (tryWrite(ANALYSIS_KEY, all)) return;
+  all[username] = {
+    ...a,
+    followers: a.followers.map(stripPic),
+    following: a.following.map(stripPic),
+  };
+  if (!tryWrite(ANALYSIS_KEY, all)) {
+    // Last resort: keep only this account's analysis.
+    tryWrite(ANALYSIS_KEY, { [username]: all[username] });
+  }
 }
 
 // ── Auth headers ───────────────────────────────────────────────────────────────

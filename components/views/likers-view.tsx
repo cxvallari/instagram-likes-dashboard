@@ -6,8 +6,8 @@ import { Heart, Loader2, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { PeopleGrid } from "@/components/people-grid";
-import { fetchAllLikers, enrichWithFriendship } from "@/lib/api";
-import { cacheMany } from "@/lib/store";
+import { fetchAllLikers } from "@/lib/api";
+import { analysisLookup } from "@/lib/grid-utils";
 import type { GridUser } from "@/components/profile-card";
 
 export function LikersView() {
@@ -35,8 +35,15 @@ export function LikersView() {
         toast.error("Nessun like trovato (post privato o link errato?)");
         return;
       }
-      cacheMany(likers);
-      const enriched = await enrichWithFriendship(likers);
+      const look = analysisLookup();
+      const enriched: GridUser[] = likers.map((u) => {
+        const k = u.username.toLowerCase();
+        return {
+          ...u,
+          follows_you: look ? look.followers.has(k) : undefined,
+          you_follow: look ? look.following.has(k) : undefined,
+        };
+      });
       setUsers(enriched);
       toast.success(`${enriched.length} like analizzati`);
     } catch (e) {

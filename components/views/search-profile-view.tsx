@@ -8,8 +8,9 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { PeopleGrid } from "@/components/people-grid";
-import { getProfile, fetchAllConnections, enrichWithFriendship, imgProxy } from "@/lib/api";
-import { cacheMany, setCached } from "@/lib/store";
+import { getProfile, fetchAllConnections, imgProxy } from "@/lib/api";
+import { setCached } from "@/lib/store";
+import { analysisLookup } from "@/lib/grid-utils";
 import type { GridUser } from "@/components/profile-card";
 import type { IgProfile } from "@/lib/types";
 
@@ -62,8 +63,16 @@ export function SearchProfileView() {
     setCount(0);
     try {
       const all = await fetchAllConnections(profile.pk, t, (u) => setCount(u.length));
-      cacheMany(all);
-      const enriched = await enrichWithFriendship(all);
+      // Tag each with your own relationship from the saved analysis (by username).
+      const look = analysisLookup();
+      const enriched: GridUser[] = all.map((u) => {
+        const k = u.username.toLowerCase();
+        return {
+          ...u,
+          follows_you: look ? look.followers.has(k) : undefined,
+          you_follow: look ? look.following.has(k) : undefined,
+        };
+      });
       setUsers(enriched);
       toast.success(`${all.length} ${t}`);
     } catch (e) {

@@ -24,9 +24,10 @@ import { ProfileCard, type GridUser } from "@/components/profile-card";
 import { ProfileModal } from "@/components/profile-modal";
 import {
   getFavorites, toggleFavorite, getCategories, getProfileCats, toggleCategory,
-  assignCategory, getCached, setCached, getMain, getAnalysis,
+  assignCategory, getCached, setCached,
 } from "@/lib/store";
-import { followAction, getProfile, enrichWithFriendship } from "@/lib/api";
+import { followAction, getProfile } from "@/lib/api";
+import { analysisLookup } from "@/lib/grid-utils";
 import type { FollowFilter, PrivacyFilter, SortKey } from "@/lib/types";
 
 export function PeopleGrid({ users }: { users: GridUser[] }) {
@@ -58,24 +59,7 @@ export function PeopleGrid({ users }: { users: GridUser[] }) {
   const [rows, setRows] = useState<GridUser[]>(users);
   const [unmutual, setUnmutual] = useState(false); // show only who doesn't follow back
 
-  // On load, apply fresher pics from your saved analysis (matched by username).
-  // Follow status is NOT guessed here — it comes from the accurate "Refresh"
-  // (friendship API), so we never mislabel someone as "Non ti segue".
-  useEffect(() => {
-    const maps = analysisMaps();
-    if (!maps) {
-      setRows(users);
-      return;
-    }
-    const picUpd: Record<string, string> = {};
-    for (const u of users) {
-      const k = u.username.toLowerCase();
-      if (maps.pics[k]) picUpd[u.username] = maps.pics[k];
-    }
-    setRows(users);
-    if (Object.keys(picUpd).length) setPicOverride((prev) => ({ ...prev, ...picUpd }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [users]);
+  useEffect(() => setRows(users), [users]);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const favorites = useMemo(() => getFavorites(), [tick]);
@@ -118,50 +102,42 @@ export function PeopleGrid({ users }: { users: GridUser[] }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, query, sort, followFilter, privacy, catFilter, tick, unmutual]);
 
-  // Pull fresh data from the user's last full analysis (followers/following),
-  // matched by username — instant and reliable, no per-profile API calls.
-  function analysisMaps() {
-    const me = getMain();
-    const a = me ? getAnalysis(me.username) : null;
-    if (!a) return null;
-    const followers = new Set(a.followers.map((u) => u.username.toLowerCase()));
-    const following = new Set(a.following.map((u) => u.username.toLowerCase()));
-    const pics: Record<string, string> = {};
-    const pks: Record<string, string> = {};
-    for (const u of [...a.followers, ...a.following]) {
-      const k = u.username.toLowerCase();
-      if (u.profile_pic_url) pics[k] = u.profile_pic_url;
-      if (u.pk) pks[k] = u.pk;
-    }
-    return { followers, following, pics, pks };
-  }
-
-  // Single "Refresh": for the visible profiles, get the real friendship status
-  // (you follow them / they follow you / request pending) and fresh profile pics.
+  // Single "Refresh": re-derive who follows you / who you follow from your saved
+  // analysis (reliable — the friendship API is blocked by Instagram), and pull
+  // fresh profile pictures (analysis first, then a profile lookup per missing).
   async function doRefresh() {
     const targets = visible;
     if (!targets.length) return;
+    const look = analysisLookup();
+    if (!look) {
+      toast.error("Apri la Dashboard e premi “Analizza” una volta: serve a sapere chi ti segue.");
+      return;
+    }
     setRefreshing(true);
     setRefDone(0);
-    const maps = analysisMaps();
-    const picUpd: Record<string, string> = {};
-    const resolved: { username: string; pk: string }[] = [];
 
+    // 1) Follow status from the analysis (instant, accurate).
+    setRows((prev) =>
+      prev.map((u) => {
+        const k = u.username.toLowerCase();
+        return { ...u, follows_you: look.followers.has(k), you_follow: look.following.has(k) };
+      })
+    );
+
+    // 2) Fresh pictures.
+    const picUpd: Record<string, string> = {};
     for (let i = 0; i < targets.length; i++) {
       const u = targets[i];
       const k = u.username.toLowerCase();
-      let pk = u.pk || getCached(u.username)?.pk || maps?.pks[k] || "";
-      let pic = maps?.pics[k] || "";
-      // Need a profile lookup only when pk or picture is still missing.
-      if (!pk || !pic) {
+      let pic = look.by.get(k)?.profile_pic_url || getCached(u.username)?.profile_pic_url || "";
+      if (!pic) {
         try {
           const r = await getProfile(u.username);
-          if (r.success && r.profile) {
-            pk = pk || r.profile.pk;
-            pic = pic || r.profile.profile_pic_url;
+          if (r.success && r.profile?.profile_pic_url) {
+            pic = r.profile.profile_pic_url;
             setCached(u.username, {
               pk: r.profile.pk, full_name: r.profile.full_name,
-              profile_pic_url: r.profile.profile_pic_url || undefined,
+              profile_pic_url: r.profile.profile_pic_url,
             });
           }
         } catch {
@@ -169,32 +145,10 @@ export function PeopleGrid({ users }: { users: GridUser[] }) {
         }
         await new Promise((res) => setTimeout(res, 100));
       }
-      if (pic) {
-        picUpd[u.username] = pic;
-        setCached(u.username, { profile_pic_url: pic });
-      }
-      if (pk) resolved.push({ username: u.username, pk });
+      if (pic) picUpd[u.username] = pic;
       setRefDone(i + 1);
     }
     if (Object.keys(picUpd).length) setPicOverride((prev) => ({ ...prev, ...picUpd }));
-
-    // Accurate friendship status (following / followed_by / outgoing_request).
-    if (resolved.length) {
-      try {
-        const enriched = await enrichWithFriendship(resolved);
-        const map = new Map(enriched.map((e) => [e.username, e]));
-        setRows((prev) =>
-          prev.map((u) => {
-            const e = map.get(u.username);
-            if (!e) return u;
-            setCached(u.username, { follows_me: e.follows_you, i_follow: e.you_follow, _friendshipLoaded: true });
-            return { ...u, follows_you: e.follows_you, you_follow: e.you_follow, pending: e.pending };
-          })
-        );
-      } catch (e) {
-        toast.error(String(e));
-      }
-    }
     setRefreshing(false);
     toast.success("Aggiornato");
   }

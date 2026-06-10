@@ -10,7 +10,7 @@ import { StatCard } from "@/components/stat-card";
 import { PeopleGrid } from "@/components/people-grid";
 import { fetchAllConnections } from "@/lib/api";
 import { computeRelations } from "@/lib/relations";
-import { cacheMany, saveSnapshot, getSnapshots, getAnalysis, saveAnalysis } from "@/lib/store";
+import { saveSnapshot, getSnapshots, getAnalysis, saveAnalysis } from "@/lib/store";
 import type { IgUser, Session, Snapshot } from "@/lib/types";
 
 export function OverviewView({ session }: { session: Session | null }) {
@@ -51,7 +51,7 @@ export function OverviewView({ session }: { session: Session | null }) {
       );
       setFollowers(fol);
       setFollowing(folg);
-      cacheMany([...fol, ...folg]); // for categories/favorites cross-session
+      // Saved analysis is the source of truth for categories/favorites/search.
       saveAnalysis(session.username, { takenAt: Date.now(), followers: fol, following: folg });
       setLastUpdated(Date.now());
       setAnalyzed(true);
