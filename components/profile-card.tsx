@@ -14,7 +14,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { cn } from "@/lib/utils";
-import { imgProxy } from "@/lib/api";
+import { avatarSrc } from "@/lib/api";
 import type { Category } from "@/lib/types";
 
 export interface GridUser {
@@ -59,7 +59,8 @@ export function ProfileCard({
   onUnfollow: () => void;
 }) {
   const igUrl = `https://www.instagram.com/${user.username}/`;
-  const pic = user.profile_pic_url ? imgProxy(user.profile_pic_url) : "";
+  // Stable, byte-cached avatar (by username) so it never disappears on expiry.
+  const pic = avatarSrc(user.username, user.profile_pic_url);
   const assignedCats = categories.filter((c) => assignedCatIds.includes(c.id));
   // Broken/expired CDN links fall back to a placeholder instead of a blank box.
   const [errored, setErrored] = useState(false);

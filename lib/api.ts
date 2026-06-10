@@ -20,6 +20,16 @@ async function jpost(url: string, body: unknown) {
 export const imgProxy = (url: string) =>
   url ? `/api/proxy-image?url=${encodeURIComponent(url)}` : "";
 
+// Durable avatar URL: stable per username, bytes cached server-side so it never
+// breaks when the Instagram CDN URL expires.
+export function avatarSrc(username: string, url?: string): string {
+  if (!username && !url) return "";
+  const parts: string[] = [];
+  if (username) parts.push(`u=${encodeURIComponent(username)}`);
+  if (url) parts.push(`url=${encodeURIComponent(url)}`);
+  return `/api/avatar?${parts.join("&")}`;
+}
+
 export async function login(sessionid: string, username: string) {
   return jpost("/api/login", { sessionid, username });
 }
